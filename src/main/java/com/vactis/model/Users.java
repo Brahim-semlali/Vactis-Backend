@@ -1,5 +1,4 @@
-package com.example.stagelabo.Models;
-
+package com.vactis.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
@@ -25,7 +24,7 @@ public class Users implements UserDetails {
     private String password;
 
     @Enumerated(EnumType.STRING)
-    private Role role; // enum : USER, ADMIN
+    private Role role;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

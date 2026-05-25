@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: stagelabo-db
+    container_name: vactis-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: auth_db
@@ -19,7 +19,7 @@ services:
 
   backend:
     build: .
-    container_name: stagelabo-back
+    container_name: vactis-back
     restart: unless-stopped
     ports:
       - "8083:8082"
@@ -32,7 +32,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: postgres
       JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
       JWT_EXPIRATION: 86400000
-      CORS_ALLOWED_ORIGINS: http://localhost:8083,http://127.0.0.1:8083
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:4200
 
 volumes:
   pgdata:

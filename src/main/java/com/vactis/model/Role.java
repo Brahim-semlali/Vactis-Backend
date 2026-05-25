@@ -1,4 +1,4 @@
-package com.example.stagelabo.Models;
+package com.vactis.model;
 
 public enum Role {
     USER,

@@ -1,13 +1,13 @@
-package com.example.stagelabo;
+package com.vactis;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class StageLaboApplication {
+public class VactisApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(StageLaboApplication.class, args);
+        SpringApplication.run(VactisApplication.class, args);
     }
 
 }

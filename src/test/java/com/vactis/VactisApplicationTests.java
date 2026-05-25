@@ -1,10 +1,10 @@
-package com.example.stagelabo;
+package com.vactis;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class StageLaboApplicationTests {
+class VactisApplicationTests {
 
     @Test
     void contextLoads() {
