@@ -38,6 +38,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- JSON (Jackson 3 — requis explicitement depuis Spring Boot 4) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jackson</artifactId>
+        </dependency>
+
         <!-- SPRING SECURITY  -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
