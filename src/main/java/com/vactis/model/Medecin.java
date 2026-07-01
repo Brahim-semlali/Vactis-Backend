@@ -1,0 +1,91 @@
+package com.vactis.model;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "medecins")
+@Data
+@NoArgsConstructor
+public class Medecin {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "code_medecin", nullable = false, unique = true, length = 20)
+    private String codeMedecin;
+
+    @Column(nullable = false, length = 255)
+    private String nom;
+
+    @Column(nullable = false, length = 255)
+    private String prenom;
+
+    @Column(nullable = false, length = 255)
+    private String specialite;
+
+    @Column(nullable = false, length = 255)
+    private String organisme;
+
+    @Column(length = 100)
+    private String ville;
+
+    @Column(length = 20)
+    private String telephone;
+
+    @Column(length = 255)
+    private String email;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private StatutMedecin statut = StatutMedecin.NOUVEAU;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 5)
+    private SegmentMedecin segment;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statut_pilotage", nullable = false, length = 30)
+    private StatutPilotage statutPilotage = StatutPilotage.ACTIF;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "risque_urgence", nullable = false, length = 20)
+    private RisqueUrgence risqueUrgence = RisqueUrgence.FAIBLE;
+
+    @Column(name = "ca_mois")
+    private Integer caMois;
+
+    @Column(name = "date_premiere_collaboration")
+    private LocalDate datePremiereCollaboration;
+
+    @Column(name = "date_derniere_activite")
+    private LocalDate dateDerniereActivite;
+
+    @Column(name = "commercial_referent", length = 255)
+    private String commercialReferent;
+
+    @Column(columnDefinition = "TEXT")
+    private String commentaire;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+}
