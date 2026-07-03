@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MedecinController {
     private final MedecinService medecinService;
 
-    //Recupere la page medecins avec filtres
+    //Recupere la page medecins avec filtresR
     @GetMapping
     public MedecinPageResponse getMedecins(
             @RequestParam(required = false) String search,
@@ -37,6 +37,12 @@ public class MedecinController {
                 risqueUrgence,
                 organisme
         );
+    }
+
+    //Retrouver un medcin par son code
+    @GetMapping("/code/{code}")
+    public Medecin getMedecinByCode(@PathVariable String code){
+        return medecinService.findByCodeMedecin(code);
     }
 
     //Retrouve un medecin par son id

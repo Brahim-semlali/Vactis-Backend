@@ -26,8 +26,17 @@ public class MedecinService {
     }
 
     //Retrouve un medecin par son code
-    public Medecin findByCodeMedecin(String codeMed){
-        return medecinRepository.findByCodeMedecin(codeMed).orElse(null);
+    public Medecin findByCodeMedecin(String codeMedecin) {
+        if (codeMedecin == null) {
+            return null;
+        }
+
+        String normalizedCode = codeMedecin.trim();
+        if (normalizedCode.isEmpty()) {
+            return null;
+        }
+
+        return medecinRepository.findByCodeMedecinIgnoreCase(normalizedCode).orElse(null);
     }
 
     //Retrouve un medecin par son id

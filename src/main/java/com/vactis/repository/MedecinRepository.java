@@ -38,6 +38,8 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
 
     Optional<Medecin> findByCodeMedecin(String codeMedecin);
 
+    Optional<Medecin> findByCodeMedecinIgnoreCase(String codeMedecin);
+
 
 
     //Retrouve les medecins par statut
@@ -101,6 +103,8 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
         where (:search is null or :search = '' or
 
                lower(concat(m.nom, ' ', m.prenom)) like lower(concat('%', :search, '%')) or
+
+               lower(m.codeMedecin) like lower(concat('%', :search, '%')) or
 
                lower(m.specialite) like lower(concat('%', :search, '%')) or
 
