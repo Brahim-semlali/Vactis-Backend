@@ -19,6 +19,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MedecinService {
     private final MedecinRepository medecinRepository;
+    private final ActionService actionService;
 
     //Recupere tous les medecins
     public List<Medecin> findAll(){
@@ -104,7 +105,7 @@ public class MedecinService {
         kpis.setSurveillance(medecinRepository.countAllByStatutPilotage(StatutPilotage.SURVEILLANCE));
         kpis.setOnboarding(medecinRepository.countAllByStatutPilotage(StatutPilotage.ONBOARDING));
         kpis.setSilenceCritique(medecinRepository.countAllByStatutPilotage(StatutPilotage.SILENCE_CRITIQUE));
-        kpis.setActionsEnCours(0L);
+        kpis.setActionsEnCours(actionService.countPlanifiees());
         return kpis;
     }
 
