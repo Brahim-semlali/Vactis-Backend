@@ -1,5 +1,6 @@
 package com.vactis.exception;
 
+
 public enum AuthErrorCode {
     BAD_CREDENTIALS,
     ACCOUNT_LOCKED,

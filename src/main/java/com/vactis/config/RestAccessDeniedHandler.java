@@ -1,7 +1,8 @@
 package com.vactis.config;
 
-import com.vactis.dto.ErrorResponse;
+import com.vactis.dto.common.ErrorResponse;
 import com.vactis.exception.AuthErrorCode;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;

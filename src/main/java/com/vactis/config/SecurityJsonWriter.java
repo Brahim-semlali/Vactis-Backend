@@ -1,6 +1,7 @@
 package com.vactis.config;
 
-import com.vactis.dto.ErrorResponse;
+import com.vactis.dto.common.ErrorResponse;
+
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.json.JsonMapper;

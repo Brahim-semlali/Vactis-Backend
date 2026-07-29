@@ -1,6 +1,7 @@
 package com.vactis.config;
 
-import com.vactis.service.JwtService;
+import com.vactis.service.auth.JwtService;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
