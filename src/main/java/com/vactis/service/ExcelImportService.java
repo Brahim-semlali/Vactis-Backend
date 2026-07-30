@@ -140,13 +140,15 @@ public class ExcelImportService {
             medecin.setSpecialite(mainSpec);
             medecin.setOrganisme(mainOrg);
             medecin.setVille("Marrakech");
-            medecin.setStatut(controleService.determinerEtat(TypeControle.STATUT, (long) totalCa));
+            String statutResult = controleService.determinerEtat(TypeControle.STATUT, (long) totalCa);
+            medecin.setStatut(statutResult != null ? statutResult : "NOUVEAU");
             medecin.setStatutPilotage(determineStatutPilotage(totalCa, docRows.size(), codeSeq));
             medecin.setRisqueUrgence(totalCa > 50000 ? RisqueUrgence.FAIBLE : (totalCa > 15000 ? RisqueUrgence.MOYEN : RisqueUrgence.ELEVE));
             medecin.setCaMois(totalCa);
             medecin.setDatePremiereCollaboration(minDate);
             medecin.setDateDerniereActivite(maxDate);
-            medecin.setSegment(controleService.determinerEtat(TypeControle.SEGEMENTS, (long) totalCa));
+            String segmentResult = controleService.determinerEtat(TypeControle.SEGEMENTS, (long) totalCa);
+            medecin.setSegment(segmentResult != null ? segmentResult : "STANDARD");
             medecin.setCommentaire("Médecin synchronisé depuis les données terrain fictives (" + docRows.size() + " dossiers)");
 
             medecin = medecinRepository.save(medecin);
