@@ -1,4 +1,4 @@
-package com.vactis.controller.auth;
+package com.vactis.controller;
 
 import com.vactis.dto.auth.AccountStatusResponse;
 import com.vactis.dto.auth.AuthResponse;

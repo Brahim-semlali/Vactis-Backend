@@ -1,7 +1,6 @@
 package com.vactis.model.action;
 
 import com.vactis.model.medecin.Medecin;
-import com.vactis.model.medecin.SegmentMedecin;
 import com.vactis.model.medecin.StatutPilotage;
 
 import jakarta.persistence.Column;
@@ -37,13 +36,13 @@ public class Action {
     @JoinColumn(name = "medecin_id", nullable = false)
     private Medecin medecin;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private StatutPilotage statut;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 5)
-    private SegmentMedecin segment;
+    @Column(nullable = false, length = 30)
+    private String statut;
+
+
+    @Column(length = 30)
+    private String segment;
 
     @Column(name = "action_recommandee", nullable = false, length = 255)
     private String actionRecommandee;

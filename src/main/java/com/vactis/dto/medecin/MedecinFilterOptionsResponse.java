@@ -9,4 +9,6 @@ import java.util.List;
 public class MedecinFilterOptionsResponse {
     private List<String> specialites;
     private List<String> organismes;
+    private List<String> statuts;
+    private List<String> segments;
 }

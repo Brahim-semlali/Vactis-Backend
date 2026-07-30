@@ -1,6 +1,6 @@
 package com.vactis.config;
 
-import com.vactis.service.data.ExcelImportService;
+import com.vactis.service.ExcelImportService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

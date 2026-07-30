@@ -1,8 +1,8 @@
-package com.vactis.controller.menu;
+package com.vactis.controller;
 
 import com.vactis.model.auth.Users;
 import com.vactis.model.menu.MenuItem;
-import com.vactis.service.menu.MenuItemService;
+import com.vactis.service.MenuItemService;
 
 
 import lombok.RequiredArgsConstructor;

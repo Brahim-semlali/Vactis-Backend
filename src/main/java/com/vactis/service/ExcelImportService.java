@@ -1,4 +1,4 @@
-package com.vactis.service.data;
+package com.vactis.service;
 
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
@@ -7,13 +7,14 @@ import com.vactis.model.data.ExtractionDonnees;
 import com.vactis.model.data.StatutDossier;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RisqueUrgence;
-import com.vactis.model.medecin.SegmentMedecin;
-import com.vactis.model.medecin.StatutMedecin;
 import com.vactis.model.medecin.StatutPilotage;
-import com.vactis.repository.action.ActionRepository;
-import com.vactis.repository.data.ExtractionDonneesRepository;
-import com.vactis.repository.medecin.MedecinRepository;
+import com.vactis.repository.ActionRepository;
+import com.vactis.repository.ExtractionDonneesRepository;
+import com.vactis.repository.MedecinRepository;
+import com.vactis.model.Controle.TypeControle;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -31,11 +32,14 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class ExcelImportService {
-
+    private final ControleService controleService;
     private final ExtractionDonneesRepository extractionDonneesRepository;
     private final MedecinRepository medecinRepository;
     private final ActionRepository actionRepository;
     private final ResourceLoader resourceLoader;
+
+    @PersistenceContext
+    private final EntityManager entityManager;
 
     @Transactional
     public void importFictifExcelAndSyncMedecins() {
@@ -55,6 +59,16 @@ public class ExcelImportService {
 
     @Transactional
     public void importFromExcelStream(InputStream inputStream) throws Exception {
+        // Supprimer les contraintes de check obsolètes si elles existent en base PostgreSQL
+        try {
+            entityManager.createNativeQuery("ALTER TABLE medecins DROP CONSTRAINT IF EXISTS medecins_statut_check").executeUpdate();
+            entityManager.createNativeQuery("ALTER TABLE medecins DROP CONSTRAINT IF EXISTS medecins_segment_check").executeUpdate();
+            entityManager.createNativeQuery("ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_statut_check").executeUpdate();
+            entityManager.createNativeQuery("ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_segment_check").executeUpdate();
+        } catch (Exception ex) {
+            log.debug("Ignoré lors du nettoyage des contraintes: {}", ex.getMessage());
+        }
+
         // Purger les anciennes données insérées précédemment depuis data.sql ou anciens tests
         log.info("Purge des anciennes données (actions, data_fictif, medecins)...");
         actionRepository.deleteAllInBatch();
@@ -126,13 +140,13 @@ public class ExcelImportService {
             medecin.setSpecialite(mainSpec);
             medecin.setOrganisme(mainOrg);
             medecin.setVille("Marrakech");
-            medecin.setStatut(StatutMedecin.ACTIF);
+            medecin.setStatut(controleService.determinerEtat(TypeControle.STATUT, (long) totalCa));
             medecin.setStatutPilotage(determineStatutPilotage(totalCa, docRows.size(), codeSeq));
             medecin.setRisqueUrgence(totalCa > 50000 ? RisqueUrgence.FAIBLE : (totalCa > 15000 ? RisqueUrgence.MOYEN : RisqueUrgence.ELEVE));
             medecin.setCaMois(totalCa);
             medecin.setDatePremiereCollaboration(minDate);
             medecin.setDateDerniereActivite(maxDate);
-            medecin.setSegment(determineSegment(totalCa));
+            medecin.setSegment(controleService.determinerEtat(TypeControle.SEGEMENTS, (long) totalCa));
             medecin.setCommentaire("Médecin synchronisé depuis les données terrain fictives (" + docRows.size() + " dossiers)");
 
             medecin = medecinRepository.save(medecin);
@@ -179,7 +193,7 @@ public class ExcelImportService {
             if (m.getStatutPilotage() == StatutPilotage.SURVEILLANCE) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.SURVEILLANCE);
+                a.setStatut(StatutPilotage.SURVEILLANCE.name());
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite urgence silence");
                 a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
@@ -195,7 +209,7 @@ public class ExcelImportService {
             } else if (m.getStatutPilotage() == StatutPilotage.PROGRESSION) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.PROGRESSION);
+                a.setStatut(StatutPilotage.PROGRESSION.name());
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite suivi progression");
                 a.setUrgence(UrgenceAction.FAIBLE);
@@ -211,7 +225,7 @@ public class ExcelImportService {
             } else if (m.getStatutPilotage() == StatutPilotage.ONBOARDING) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.ONBOARDING);
+                a.setStatut(StatutPilotage.ONBOARDING.name());
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite onboarding");
                 a.setUrgence(UrgenceAction.ELEVE);
@@ -227,7 +241,7 @@ public class ExcelImportService {
             } else if (m.getStatutPilotage() == StatutPilotage.SILENCE_CRITIQUE) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.SILENCE_CRITIQUE);
+                a.setStatut(StatutPilotage.SILENCE_CRITIQUE.name());
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite urgence silence");
                 a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
@@ -264,12 +278,6 @@ public class ExcelImportService {
         String prenom = parts[0];
         String nom = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
         return new String[]{prenom, nom};
-    }
-
-    private SegmentMedecin determineSegment(int totalCa) {
-        if (totalCa >= 40000) return SegmentMedecin.A;
-        if (totalCa >= 15000) return SegmentMedecin.B;
-        return SegmentMedecin.C;
     }
 
     private StatutPilotage determineStatutPilotage(int totalCa, int dossierCount, int seq) {

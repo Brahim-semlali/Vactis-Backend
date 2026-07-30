@@ -1,4 +1,4 @@
-package com.vactis.service.menu;
+package com.vactis.service;
 
 import com.vactis.model.auth.Role;
 import com.vactis.model.auth.Users;

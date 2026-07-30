@@ -1,12 +1,11 @@
-package com.vactis.controller.action;
+package com.vactis.controller;
 
 import com.vactis.dto.action.ActionPageResponse;
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
 import com.vactis.model.action.UrgenceAction;
-import com.vactis.model.medecin.SegmentMedecin;
 import com.vactis.model.medecin.StatutPilotage;
-import com.vactis.service.action.ActionService;
+import com.vactis.service.ActionService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,7 +24,7 @@ public class ActionController {
     public ActionPageResponse getActions(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) StatutPilotage statut,
-            @RequestParam(required = false) SegmentMedecin segment,
+            @RequestParam(required = false) String segment,
             @RequestParam(required = false) String action,
             @RequestParam(required = false) UrgenceAction urgence,
             @RequestParam(required = false) EtatAction etatAction,

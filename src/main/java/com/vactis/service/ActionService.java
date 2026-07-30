@@ -1,4 +1,4 @@
-package com.vactis.service.action;
+package com.vactis.service;
 
 import com.vactis.dto.action.ActionFilterOptionsResponse;
 import com.vactis.dto.action.ActionKpiResponse;
@@ -7,19 +7,20 @@ import com.vactis.dto.action.ActionPageResponse;
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
 import com.vactis.model.action.UrgenceAction;
-import com.vactis.model.medecin.SegmentMedecin;
 import com.vactis.model.medecin.StatutPilotage;
-import com.vactis.repository.action.ActionRepository;
+import com.vactis.repository.ActionRepository;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import com.vactis.model.Controle.TypeControle;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class ActionService {
     private final ActionRepository actionRepository;
+    private final ControleService controleService;
 
     public List<Action> findAll() {
         return actionRepository.findAll();
@@ -32,7 +33,7 @@ public class ActionService {
     public List<Action> searchActions(
             String search,
             StatutPilotage statut,
-            SegmentMedecin segment,
+            String segment,
             String action,
             UrgenceAction urgence,
             EtatAction etatAction,
@@ -42,8 +43,8 @@ public class ActionService {
     ) {
         return actionRepository.searchActions(
                 normalize(search),
-                statut,
-                segment,
+                statut != null ? statut.name() : null,
+                normalize(segment),
                 normalize(action),
                 urgence,
                 etatAction,
@@ -58,6 +59,8 @@ public class ActionService {
         filters.setActions(actionRepository.findDistinctActions());
         filters.setCommerciaux(actionRepository.findDistinctCommerciaux());
         filters.setLieuxOrganismes(actionRepository.findDistinctLieuxOrganismes());
+        filters.setStatuts(controleService.getEtatsActifs(TypeControle.STATUT));
+        filters.setSegments(controleService.getEtatsActifs(TypeControle.SEGEMENTS));
         return filters;
     }
 
@@ -78,7 +81,7 @@ public class ActionService {
     public ActionPageResponse getActionPage(
             String search,
             StatutPilotage statut,
-            SegmentMedecin segment,
+            String segment,
             String action,
             UrgenceAction urgence,
             EtatAction etatAction,

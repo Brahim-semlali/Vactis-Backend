@@ -1,8 +1,7 @@
-package com.vactis.repository.medecin;
+package com.vactis.repository;
 
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RisqueUrgence;
-import com.vactis.model.medecin.SegmentMedecin;
 import com.vactis.model.medecin.StatutMedecin;
 import com.vactis.model.medecin.StatutPilotage;
 
@@ -61,19 +60,19 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
 
     //le nombre des medecins par segment
 
-    Long countAllBySegment(SegmentMedecin segment);
+    Long countAllBySegment(String segment);
 
 
 
     //le nombre des medecins par segments
 
-    Long countBySegmentIn(Collection<SegmentMedecin> segments);
+    Long countBySegmentIn(Collection<String> segments);
 
 
 
     //Retrouve les medecins par segment
 
-    List<Medecin> findBySegment(SegmentMedecin segment);
+    List<Medecin> findBySegment(String segment);
 
 
 
@@ -111,7 +110,9 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
 
           and (:statutPilotage is null or m.statutPilotage = :statutPilotage)
 
-          and (:segment is null or m.segment = :segment)
+          and (:statut is null or :statut = '' or m.statut = :statut)
+
+          and (:segment is null or :segment = '' or m.segment = :segment)
 
           and (:specialite is null or :specialite = '' or m.specialite = :specialite)
 
@@ -129,7 +130,9 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
 
             @Param("statutPilotage") StatutPilotage statutPilotage,
 
-            @Param("segment") SegmentMedecin segment,
+            @Param("statut") String statut,
+
+            @Param("segment") String segment,
 
             @Param("specialite") String specialite,
 

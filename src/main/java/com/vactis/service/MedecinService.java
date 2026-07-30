@@ -1,4 +1,4 @@
-package com.vactis.service.medecin;
+package com.vactis.service;
 
 import com.vactis.dto.medecin.MedecinFilterOptionsResponse;
 import com.vactis.dto.medecin.MedecinKpiResponse;
@@ -6,12 +6,10 @@ import com.vactis.dto.medecin.MedecinMetaResponse;
 import com.vactis.dto.medecin.MedecinPageResponse;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RisqueUrgence;
-import com.vactis.model.medecin.SegmentMedecin;
 import com.vactis.model.medecin.StatutMedecin;
 import com.vactis.model.medecin.StatutPilotage;
-import com.vactis.repository.medecin.MedecinRepository;
-import com.vactis.service.action.ActionService;
-import com.vactis.service.data.ExcelImportService;
+import com.vactis.model.Controle.TypeControle;
+import com.vactis.repository.MedecinRepository;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,6 +22,7 @@ public class MedecinService {
     private final MedecinRepository medecinRepository;
     private final ActionService actionService;
     private final ExcelImportService excelImportService;
+    private final ControleService controleService;
 
     public void syncMedecinsFromDataFictif() {
         excelImportService.importFictifExcelAndSyncMedecins();
@@ -64,8 +63,8 @@ public class MedecinService {
     }
 
     //Retrouve les medecins par segment
-    public List<Medecin> findMedecinsBySegement(SegmentMedecin segmentMedecin){
-        return medecinRepository.findBySegment(segmentMedecin);
+    public List<Medecin> findMedecinsBySegement(String segment){
+        return medecinRepository.findBySegment(segment);
     }
 
     //le nombre des medecins par statu pilotage
@@ -82,7 +81,8 @@ public class MedecinService {
     public List<Medecin> searchMedecins(
             String search,
             StatutPilotage statutPilotage,
-            SegmentMedecin segment,
+            String statut,
+            String segment,
             String specialite,
             RisqueUrgence risqueUrgence,
             String organisme
@@ -90,7 +90,8 @@ public class MedecinService {
         return medecinRepository.searchMedecins(
                 normalize(search),
                 statutPilotage,
-                segment,
+                normalize(statut),
+                normalize(segment),
                 normalize(specialite),
                 risqueUrgence,
                 normalize(organisme)
@@ -102,6 +103,8 @@ public class MedecinService {
         MedecinFilterOptionsResponse filters = new MedecinFilterOptionsResponse();
         filters.setSpecialites(medecinRepository.findDistinctSpecialites());
         filters.setOrganismes(medecinRepository.findDistinctOrganismes());
+        filters.setStatuts(controleService.getEtatsActifs(TypeControle.STATUT));
+        filters.setSegments(controleService.getEtatsActifs(TypeControle.SEGEMENTS));
         return filters;
     }
 
@@ -109,7 +112,15 @@ public class MedecinService {
     public MedecinKpiResponse getKpis(){
         MedecinKpiResponse kpis = new MedecinKpiResponse();
         kpis.setTotal(medecinRepository.countAllMedecins());
-        kpis.setSegmentsAB(medecinRepository.countBySegmentIn(List.of(SegmentMedecin.A, SegmentMedecin.B)));
+        List<String> prioritySegments = controleService.getEtatsActifs(TypeControle.SEGEMENTS);
+        if (prioritySegments.size() >= 2) {
+            prioritySegments = prioritySegments.subList(0, prioritySegments.size() - 1);
+        }
+        kpis.setSegmentsAB(
+                prioritySegments.isEmpty()
+                        ? 0L
+                        : medecinRepository.countBySegmentIn(prioritySegments)
+        );
         kpis.setSurveillance(medecinRepository.countAllByStatutPilotage(StatutPilotage.SURVEILLANCE));
         kpis.setOnboarding(medecinRepository.countAllByStatutPilotage(StatutPilotage.ONBOARDING));
         kpis.setSilenceCritique(medecinRepository.countAllByStatutPilotage(StatutPilotage.SILENCE_CRITIQUE));
@@ -117,18 +128,47 @@ public class MedecinService {
         return kpis;
     }
 
+    public void recalculerStatutsEtSegmentsDynamiques() {
+        List<Medecin> medecins = medecinRepository.findAll();
+        boolean modifie = false;
+
+        for (Medecin m : medecins) {
+            Long ca = m.getCaMois() != null ? m.getCaMois().longValue() : 0L;
+
+            String statutDynamique = controleService.determinerEtat(TypeControle.STATUT, ca);
+            if (statutDynamique != null && !statutDynamique.equals(m.getStatut())) {
+                m.setStatut(statutDynamique);
+                modifie = true;
+            }
+
+            String segmentDynamique = controleService.determinerEtat(TypeControle.SEGEMENTS, ca);
+            if (segmentDynamique != null && !segmentDynamique.equals(m.getSegment())) {
+                m.setSegment(segmentDynamique);
+                modifie = true;
+            }
+        }
+
+        if (modifie) {
+            medecinRepository.saveAll(medecins);
+        }
+    }
+
     //Recupere la page medecins complete
     public MedecinPageResponse getMedecinPage(
             String search,
             StatutPilotage statutPilotage,
-            SegmentMedecin segment,
+            String statut,
+            String segment,
             String specialite,
             RisqueUrgence risqueUrgence,
             String organisme
     ){
+        recalculerStatutsEtSegmentsDynamiques();
+
         List<Medecin> items = searchMedecins(
                 search,
                 statutPilotage,
+                statut,
                 segment,
                 specialite,
                 risqueUrgence,

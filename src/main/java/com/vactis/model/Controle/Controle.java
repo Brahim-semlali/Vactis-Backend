@@ -16,9 +16,9 @@ public class Controle {
     @Enumerated(EnumType.STRING)
     private TypeControle type ;
 
-    private String nom_etat ;
+    private String etat ;
     private Long minCA ;
     private Long maxCA ;
-    private Boolean Active = true ;
+    private Boolean actif = true ;
 
 }

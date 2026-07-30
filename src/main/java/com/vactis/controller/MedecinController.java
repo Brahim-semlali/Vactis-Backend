@@ -1,11 +1,10 @@
-package com.vactis.controller.medecin;
+package com.vactis.controller;
 
 import com.vactis.dto.medecin.MedecinPageResponse;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RisqueUrgence;
-import com.vactis.model.medecin.SegmentMedecin;
 import com.vactis.model.medecin.StatutPilotage;
-import com.vactis.service.medecin.MedecinService;
+import com.vactis.service.MedecinService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,7 +24,8 @@ public class MedecinController {
     public MedecinPageResponse getMedecins(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) StatutPilotage statutPilotage,
-            @RequestParam(required = false) SegmentMedecin segment,
+            @RequestParam(required = false) String statut,
+            @RequestParam(required = false) String segment,
             @RequestParam(required = false) String specialite,
             @RequestParam(required = false) RisqueUrgence risqueUrgence,
             @RequestParam(required = false) String organisme
@@ -33,6 +33,7 @@ public class MedecinController {
         return medecinService.getMedecinPage(
                 search,
                 statutPilotage,
+                statut,
                 segment,
                 specialite,
                 risqueUrgence,

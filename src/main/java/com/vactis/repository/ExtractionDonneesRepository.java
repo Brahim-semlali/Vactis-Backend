@@ -1,4 +1,4 @@
-package com.vactis.repository.data;
+package com.vactis.repository;
 
 import com.vactis.model.data.ExtractionDonnees;
 

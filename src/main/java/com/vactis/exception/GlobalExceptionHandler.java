@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 @Slf4j
 @RestControllerAdvice
@@ -51,9 +52,27 @@ public class GlobalExceptionHandler {
                 null));
     }
 
+    /**
+     * Gère les ResponseStatusException lancées par les services (ex: 404 NOT_FOUND, 400 BAD_REQUEST).
+     * Sans ce handler, le @ExceptionHandler(Exception.class) ci-dessous les attraperait
+     * et retournerait incorrectement un 500.
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException ex) {
+        log.warn("[API] {} | {}", ex.getStatusCode(), ex.getReason());
+        return ResponseEntity.status(ex.getStatusCode()).body(new ErrorResponse(
+                null,
+                ex.getReason() != null ? ex.getReason() : ex.getMessage(),
+                null,
+                null,
+                null,
+                null,
+                null));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
-        log.error("[AUTH-API] Erreur interne", ex);
+        log.error("[API] Erreur interne inattendue", ex);
         return ResponseEntity.internalServerError().body(new ErrorResponse(
                 null,
                 "Une erreur interne est survenue",

@@ -1,9 +1,8 @@
-package com.vactis.repository.action;
+package com.vactis.repository;
 
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
 import com.vactis.model.action.UrgenceAction;
-import com.vactis.model.medecin.SegmentMedecin;
 import com.vactis.model.medecin.StatutPilotage;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -38,8 +37,8 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
                lower(a.actionRecommandee) like lower(concat('%', :search, '%')) or
                lower(a.commercial) like lower(concat('%', :search, '%')) or
                lower(a.lieuOrganisme) like lower(concat('%', :search, '%')))
-          and (:statut is null or a.statut = :statut)
-          and (:segment is null or a.segment = :segment)
+          and (:statut is null or :statut = '' or a.statut = :statut)
+          and (:segment is null or :segment = '' or a.segment = :segment)
           and (:action is null or :action = '' or a.actionRecommandee = :action)
           and (:urgence is null or a.urgence = :urgence)
           and (:etatAction is null or a.etatAction = :etatAction)
@@ -50,8 +49,8 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
     """)
     List<Action> searchActions(
             @Param("search") String search,
-            @Param("statut") StatutPilotage statut,
-            @Param("segment") SegmentMedecin segment,
+            @Param("statut") String statut,
+            @Param("segment") String segment,
             @Param("action") String action,
             @Param("urgence") UrgenceAction urgence,
             @Param("etatAction") EtatAction etatAction,

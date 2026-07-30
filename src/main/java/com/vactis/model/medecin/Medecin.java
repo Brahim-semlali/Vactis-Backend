@@ -51,13 +51,11 @@ public class Medecin {
     @Column(length = 255)
     private String email;
 
-    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private StatutMedecin statut = StatutMedecin.NOUVEAU;
+    private String statut = "NOUVEAU";
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 5)
-    private SegmentMedecin segment;
+    @Column(length = 30)
+    private String segment;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "statut_pilotage", nullable = false, length = 30)
