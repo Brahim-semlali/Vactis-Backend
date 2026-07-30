@@ -1,93 +1,220 @@
-# Vactis Back
+# 🏥 Vactis Backend
 
+> API REST Spring Boot pour la gestion de la relation médecin — Laboratoire VACTIS
 
+[![CI Backend](https://github.com/YOUR_ORG/Vactis-Backend/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/YOUR_ORG/Vactis-Backend/actions/workflows/backend-ci.yml)
+![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-green?logo=springboot)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)
 
-## Getting started
+---
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## 📋 Description
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+**Vactis Backend** est l'API REST du système de pilotage de la relation médecin développé pour le laboratoire **VACTIS**. Il expose les endpoints nécessaires à la gestion des médecins, des actions commerciales, du suivi des dossiers patients et du contrôle des règles métier (statuts, segments CA).
 
-## Add your files
+### Fonctionnalités principales
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+- 🔐 **Authentification JWT** — Login sécurisé avec blocage de compte après tentatives échouées
+- 👨‍⚕️ **Gestion des médecins** — CRUD complet avec statut, segment CA, pilotage et risque urgence
+- 📊 **Actions commerciales** — Suivi des visites, relances et états planifiés/réalisés
+- 📁 **Import Excel** — Synchronisation automatique depuis `data_fictif_test_vactis.xlsx`
+- ⚙️ **Règles de contrôle dynamiques** — Paramétrage des seuils CA par type (STATUT / SEGMENT)
+- 🩺 **Actuator Health** — Endpoint `/actuator/health` pour la supervision
+- 📖 **Swagger UI** — Documentation API interactive disponible à `/swagger-ui.html`
+
+---
+
+## 🛠️ Stack technique
+
+| Composant       | Technologie                 |
+|-----------------|-----------------------------|
+| Langage         | Java 17                     |
+| Framework       | Spring Boot 4.0.6           |
+| Sécurité        | Spring Security + JWT (JJWT 0.11.5) |
+| Persistance     | Spring Data JPA + Hibernate |
+| Base de données | PostgreSQL 16               |
+| Import Excel    | Apache POI 5.2.5            |
+| Build           | Maven (mvnw)                |
+| Conteneurisation| Docker + Docker Compose     |
+| CI/CD           | GitHub Actions              |
+| Documentation   | SpringDoc OpenAPI (Swagger) |
+
+---
+
+## 🚀 Démarrage rapide
+
+### Prérequis
+
+- Java 17+
+- Maven 3.9+ (ou utiliser `./mvnw`)
+- PostgreSQL 16 (ou Docker)
+- Docker & Docker Compose (recommandé)
+
+---
+
+### ▶️ Avec Docker Compose (recommandé)
+
+```bash
+# 1. Cloner le dépôt
+git clone https://github.com/YOUR_ORG/Vactis-Backend.git
+cd Vactis-Backend
+
+# 2. Configurer les variables d'environnement
+cp .env.example .env
+# Modifier .env avec vos valeurs
+
+# 3. Lancer PostgreSQL + Backend
+docker compose up --build -d
+
+# 4. Vérifier que l'API est disponible
+curl http://localhost:8083/actuator/health
+```
+
+L'API sera disponible sur : **`http://localhost:8083`**
+
+---
+
+### ▶️ En local (sans Docker)
+
+```bash
+# 1. S'assurer que PostgreSQL tourne sur localhost:5432
+#    avec une base vactis_db créée
+
+# 2. Définir les variables d'environnement
+export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/vactis_db
+export SPRING_DATASOURCE_USERNAME=postgres
+export SPRING_DATASOURCE_PASSWORD=votre_mdp
+export JWT_SECRET=votre_secret_jwt
+
+# 3. Lancer l'application
+./mvnw spring-boot:run
+```
+
+L'API sera disponible sur : **`http://localhost:8082`**
+
+---
+
+## ⚙️ Variables d'environnement
+
+Copier `.env.example` vers `.env` et renseigner les valeurs :
+
+| Variable                    | Description                              | Défaut                        |
+|-----------------------------|------------------------------------------|-------------------------------|
+| `SPRING_DATASOURCE_URL`     | URL JDBC de connexion PostgreSQL         | `jdbc:postgresql://localhost:5432/vactis_db` |
+| `SPRING_DATASOURCE_USERNAME`| Utilisateur PostgreSQL                   | `postgres`                    |
+| `SPRING_DATASOURCE_PASSWORD`| Mot de passe PostgreSQL                  | *(vide)*                      |
+| `JWT_SECRET`                | Clé secrète pour signer les tokens JWT   | *(valeur de dev uniquement)*  |
+| `JWT_EXPIRATION`            | Durée de validité du token en ms         | `86400000` (24h)              |
+| `CORS_ALLOWED_ORIGINS`      | Origines autorisées pour CORS            | `http://localhost:5173`       |
+| `POSTGRES_PORT`             | Port exposé de PostgreSQL (Docker)       | `5432`                        |
+| `BACKEND_PORT`              | Port exposé du backend (Docker)          | `8083`                        |
+
+> ⚠️ **Ne jamais committer le fichier `.env`** — il est dans `.gitignore`.
+
+---
+
+## 📡 Endpoints API principaux
+
+| Méthode | Endpoint                        | Description                          | Auth requise |
+|---------|---------------------------------|--------------------------------------|:---:|
+| POST    | `/api/auth/login`               | Connexion, retourne un token JWT     | ❌  |
+| POST    | `/api/auth/register`            | Créer un compte utilisateur          | ❌  |
+| GET     | `/api/medecins`                 | Lister tous les médecins             | ✅  |
+| POST    | `/api/medecins`                 | Créer un médecin                     | ✅  |
+| PUT     | `/api/medecins/{id}`            | Modifier un médecin                  | ✅  |
+| DELETE  | `/api/medecins/{id}`            | Supprimer un médecin                 | ✅  |
+| POST    | `/api/medecins/sync-excel`      | Synchroniser depuis le fichier Excel | ✅  |
+| GET     | `/api/actions`                  | Lister les actions commerciales      | ✅  |
+| GET     | `/api/controles`                | Lister les règles de contrôle        | ✅  |
+| POST    | `/api/controles`                | Créer une règle de contrôle          | ✅  |
+| GET     | `/actuator/health`              | Status de santé de l'application     | ❌  |
+
+📖 **Documentation complète** : [`http://localhost:8082/swagger-ui.html`](http://localhost:8082/swagger-ui.html)
+
+---
+
+## 🧪 Tests
+
+```bash
+# Lancer les tests unitaires et d'intégration
+./mvnw test
+
+# Ou avec rapport complet
+./mvnw clean verify
+```
+
+> Les tests d'intégration nécessitent une base PostgreSQL accessible. Voir le workflow CI pour la configuration avec un conteneur PostgreSQL.
+
+---
+
+## 🐳 Docker
+
+```bash
+# Construire l'image Docker
+docker build -t vactis-backend:latest .
+
+# Lancer l'image seule (PostgreSQL déjà disponible)
+docker run -p 8082:8082 \
+  -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/vactis_db \
+  -e SPRING_DATASOURCE_PASSWORD=votre_mdp \
+  -e JWT_SECRET=votre_secret \
+  vactis-backend:latest
+```
+
+---
+
+## ⚡ CI/CD — GitHub Actions
+
+Le pipeline CI (`.github/workflows/backend-ci.yml`) s'exécute automatiquement sur chaque **push** et **pull request** vers `main` :
+
+1. ✅ Démarrage d'un conteneur **PostgreSQL 15** de test
+2. ✅ Installation **JDK 17** (Temurin) avec cache Maven
+3. ✅ **Build & Tests** — `./mvnw clean verify`
+4. ✅ **Build Docker Image** — Vérifie que l'image se construit correctement
+
+---
+
+## 🗂️ Structure du projet
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/vactis-group/Vactis-back.git
-git branch -M main
-git push -uf origin main
+src/
+├── main/
+│   ├── java/com/vactis/
+│   │   ├── config/          # Sécurité, JWT, CORS, seeding
+│   │   ├── controller/      # AuthController, MedecinController, ActionController, ControleController
+│   │   ├── dto/             # DTOs requêtes/réponses
+│   │   ├── exception/       # GlobalExceptionHandler
+│   │   ├── model/           # Entités JPA (Medecin, Action, Controle, User...)
+│   │   ├── repository/      # Spring Data JPA repositories
+│   │   └── service/         # Logique métier + ExcelImportService
+│   └── resources/
+│       ├── application.properties
+│       ├── data.sql          # Données initiales (admin, paramètres)
+│       └── data/             # Fichier Excel fictif pour les tests
+└── test/
+    └── java/com/vactis/      # Tests Spring Boot
 ```
 
-## Integrate with your tools
+---
 
-* [Set up project integrations](https://gitlab.com/vactis-group/Vactis-back/-/settings/integrations)
+## 👤 Identifiants de démonstration
 
-## Collaborate with your team
+| Champ      | Valeur          |
+|------------|-----------------|
+| Username   | `admin`         |
+| Password   | `password`      |
+| Rôle       | `ADMIN`         |
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+---
 
-## Test and Deploy
+## 👥 Auteurs
 
-Use the built-in continuous integration in GitLab.
+Développé dans le cadre d'un stage au laboratoire **VACTIS** — Marrakech.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+---
 
-***
+## 📄 Licence
 
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Usage interne — © VACTIS. Tous droits réservés.
