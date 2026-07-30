@@ -2,10 +2,10 @@
 -- Compte admin : username=admin / password=password
 
 -- Supprimer les anciennes contraintes de check fixes sur statut et segment s'il y en a
-ALTER TABLE medecins DROP CONSTRAINT IF EXISTS medecins_statut_check;
-ALTER TABLE medecins DROP CONSTRAINT IF EXISTS medecins_segment_check;
-ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_statut_check;
-ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_segment_check;
+ALTER TABLE IF EXISTS medecins DROP CONSTRAINT IF EXISTS medecins_statut_check;
+ALTER TABLE IF EXISTS medecins DROP CONSTRAINT IF EXISTS medecins_segment_check;
+ALTER TABLE IF EXISTS actions DROP CONSTRAINT IF EXISTS actions_statut_check;
+ALTER TABLE IF EXISTS actions DROP CONSTRAINT IF EXISTS actions_segment_check;
 
 -- Paramètres auth
 INSERT INTO auth_settings (id, max_failed_attempts, lock_duration_minutes)
