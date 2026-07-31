@@ -1,45 +1,30 @@
-HELP.md
+# ============================================================
+#  .gitignore — Backend Spring Boot (StageLabo-back)
+# ============================================================
+
+# ── Build Java ───────────────────────────────────────────────
 target/
-.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
-
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-### IntelliJ IDEA ###
-.idea/
-*.iws
-*.iml
-*.ipr
-out/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
 build/
-!**/src/main/**/build/
-!**/src/test/**/build/
+out/
+*.class
+*.war
+*.ear
+!**/mvnw
+!**/.mvn/wrapper/maven-wrapper.jar
 
-### VS Code ###
-.vscode/
+# ── Maven wrapper ────────────────────────────────────────────
+.mvn/wrapper/maven-wrapper.jar
 
-### Secrets et configuration locale (ne pas pousser sur GitLab) ###
+# ── Secrets & configuration sensible ─────────────────────────
 .env
 .env.*
 !.env.example
 src/main/resources/.env
 src/main/resources/.env.*
 !src/main/resources/.env.example
+application-prod.properties
+application-prod.yml
+application-prod.yaml
 application-local.properties
 application-local.yml
 application-local.yaml
@@ -47,24 +32,40 @@ application-local.yaml
 **/application-*-local.yml
 **/application-*-local.yaml
 
-### Logs ###
+# ── Logs ─────────────────────────────────────────────────────
 *.log
 logs/
 
-### OS ###
+# ── IDE — IntelliJ IDEA ──────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# ── IDE — Spring Tool Suite (STS) ────────────────────────────
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# ── IDE — VS Code ────────────────────────────────────────────
+.vscode/
+
+# ── IDE — NetBeans ───────────────────────────────────────────
+/nbproject/private/
+/nbbuild/
+/nbdist/
+/.nb-gradle/
+
+# ── OS ───────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
 
-### Divers build / cache ###
-*.class
-*.jar
-!**/mvnw
-!**/.mvn/wrapper/maven-wrapper.jar
-*.war
-*.ear
-*.zip
-*.tar.gz
-*.rar
+# ── Divers ───────────────────────────────────────────────────
 hs_err_pid*
 replay_pid*
