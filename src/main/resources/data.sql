@@ -458,3 +458,25 @@ WHERE m.code_medecin = 'MED007'
       SELECT 1 FROM actions a
       WHERE a.medecin_id = m.id AND a.action_recommandee = 'visite urgence silence'
   );
+
+-- Initialisation des règles de contrôle (Controle)
+INSERT INTO controle (type, etat, minca, maxca, actif)
+SELECT 'STATUT', 'ACTIF', 0, 10000000, true
+WHERE NOT EXISTS (SELECT 1 FROM controle WHERE type = 'STATUT' AND etat = 'ACTIF');
+
+INSERT INTO controle (type, etat, minca, maxca, actif)
+SELECT 'SEGEMENTS', 'A', 75, 100, true
+WHERE NOT EXISTS (SELECT 1 FROM controle WHERE type = 'SEGEMENTS' AND etat = 'A');
+
+INSERT INTO controle (type, etat, minca, maxca, actif)
+SELECT 'SEGEMENTS', 'B', 60, 74, true
+WHERE NOT EXISTS (SELECT 1 FROM controle WHERE type = 'SEGEMENTS' AND etat = 'B');
+
+INSERT INTO controle (type, etat, minca, maxca, actif)
+SELECT 'SEGEMENTS', 'C', 45, 59, true
+WHERE NOT EXISTS (SELECT 1 FROM controle WHERE type = 'SEGEMENTS' AND etat = 'C');
+
+INSERT INTO controle (type, etat, minca, maxca, actif)
+SELECT 'SEGEMENTS', 'D', 0, 44, true
+WHERE NOT EXISTS (SELECT 1 FROM controle WHERE type = 'SEGEMENTS' AND etat = 'D');
+

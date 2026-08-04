@@ -57,6 +57,12 @@ public class Medecin {
     @Column(length = 30)
     private String segment;
 
+    @Column(name = "note_input")
+    private Double noteInput;
+
+    @Column(name = "score_valeur")
+    private Double scoreValeur;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "statut_pilotage", nullable = false, length = 30)
     private StatutPilotage statutPilotage = StatutPilotage.ACTIF;

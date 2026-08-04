@@ -33,6 +33,7 @@ import java.util.*;
 @Slf4j
 public class ExcelImportService {
     private final ControleService controleService;
+    private final SegmentationService segmentationService;
     private final ExtractionDonneesRepository extractionDonneesRepository;
     private final MedecinRepository medecinRepository;
     private final ActionRepository actionRepository;
@@ -179,7 +180,10 @@ public class ExcelImportService {
         }
         extractionDonneesRepository.saveAll(dossiers);
 
-        // 3. Générer des actions associées uniquement aux nouveaux médecins synchronisés
+        // 3. Recalculer le Score de valeur et la segmentation A/B/C/D
+        segmentationService.recalculerSegmentationPortefeuille();
+
+        // 4. Générer des actions associées uniquement aux nouveaux médecins synchronisés
         generateActionsForMedecins(savedMedecins);
 
         log.info("Base synchronisée avec succès depuis data_fictif: {} médecins et {} dossiers.", savedMedecins.size(), dossiers.size());

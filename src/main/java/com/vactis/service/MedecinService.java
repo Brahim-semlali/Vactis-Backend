@@ -23,6 +23,7 @@ public class MedecinService {
     private final ActionService actionService;
     private final ExcelImportService excelImportService;
     private final ControleService controleService;
+    private final SegmentationService segmentationService;
 
     public void syncMedecinsFromDataFictif() {
         excelImportService.importFictifExcelAndSyncMedecins();
@@ -140,17 +141,14 @@ public class MedecinService {
                 m.setStatut(statutDynamique);
                 modifie = true;
             }
-
-            String segmentDynamique = controleService.determinerEtat(TypeControle.SEGEMENTS, ca);
-            if (segmentDynamique != null && !segmentDynamique.equals(m.getSegment())) {
-                m.setSegment(segmentDynamique);
-                modifie = true;
-            }
         }
 
         if (modifie) {
             medecinRepository.saveAll(medecins);
         }
+
+        // Recalcul du score de valeur et des segments A/B/C/D selon la formule Anapath
+        segmentationService.recalculerSegmentationPortefeuille();
     }
 
     //Recupere la page medecins complete

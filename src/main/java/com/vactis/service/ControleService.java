@@ -64,6 +64,22 @@ public class ControleService {
         return null;
     }
 
+    public String determinerEtatParScore(TypeControle type, Double score) {
+        if (score == null) return null;
+        List<Controle> regles = controleRepository.findByTypeAndActifTrue(type);
+
+        for (Controle regle : regles) {
+            double minScore = regle.getMinCA() != null ? regle.getMinCA().doubleValue() : 0.0;
+            double maxScore = regle.getMaxCA() != null ? regle.getMaxCA().doubleValue() : 100.0;
+
+            if (score >= minScore && score <= maxScore) {
+                return regle.getEtat();
+            }
+        }
+
+        return null;
+    }
+
     public List<String> getEtatsActifs(TypeControle type) {
         return controleRepository.findByTypeAndActifTrue(type).stream()
                 .map(Controle::getEtat)
