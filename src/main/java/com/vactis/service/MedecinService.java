@@ -12,7 +12,9 @@ import com.vactis.model.Controle.TypeControle;
 import com.vactis.repository.MedecinRepository;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -51,6 +53,20 @@ public class MedecinService {
     //Retrouve un medecin par son id
     public Medecin findById(Long id){
         return medecinRepository.findById(id).orElse(null);
+    }
+
+    //Met à jour uniquement le champ noteInput (1-5 ou null) — sans recalcul de segment
+    public Medecin updateNoteInput(Long id, Double noteInput) {
+        Medecin medecin = medecinRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable"));
+
+        if (noteInput != null && (noteInput < 1.0 || noteInput > 5.0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La note doit être comprise entre 1 et 5 (ou null pour effacer).");
+        }
+
+        medecin.setNoteInput(noteInput);
+        return medecinRepository.save(medecin);
     }
 
     //Retrouve medecins par statu

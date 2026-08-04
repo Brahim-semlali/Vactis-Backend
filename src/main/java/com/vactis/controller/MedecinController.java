@@ -7,11 +7,16 @@ import com.vactis.model.medecin.StatutPilotage;
 import com.vactis.service.MedecinService;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
@@ -57,5 +62,23 @@ public class MedecinController {
     @org.springframework.web.bind.annotation.PostMapping("/sync")
     public void syncFromDataFictif(){
         medecinService.syncMedecinsFromDataFictif();
+    }
+
+    /**
+     * Met à jour uniquement le champ noteInput du médecin (Potentiel commercial).
+     * Body : { "noteInput": 4.0 }  ou  { "noteInput": null } pour effacer.
+     * Retourne 400 si la valeur est hors de l'intervalle [1, 5].
+     */
+    @PatchMapping("/{id}/note-input")
+    public ResponseEntity<Medecin> updateNoteInput(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body
+    ) {
+        Double noteInput = null;
+        if (body.containsKey("noteInput") && body.get("noteInput") != null) {
+            noteInput = ((Number) body.get("noteInput")).doubleValue();
+        }
+        Medecin updated = medecinService.updateNoteInput(id, noteInput);
+        return ResponseEntity.ok(updated);
     }
 }
