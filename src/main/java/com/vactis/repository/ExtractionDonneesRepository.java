@@ -28,4 +28,54 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
         where e.medecin.id = :medecinId
     """)
     Long countCasByMedecinId(@Param("medecinId") Long medecinId);
+
+    @Query("""
+        select coalesce(sum(e.prixAPayer), 0L)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate
+    """)
+    Long sumPrixAPayerByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query("""
+        select count(e)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate
+    """)
+    Long countCasByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query("""
+        select count(distinct e.medecin.id)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate and e.medecin is not null
+    """)
+    Long countMedecinsDistinctsByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query("""
+        select coalesce(sum(e.prixAPayer), 0L)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate and e.medecin is not null
+    """)
+    Long sumPrixAPayerWithMedecinByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query("""
+        select count(e)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate and e.medecin is null
+    """)
+    Long countNonAffectesByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query("""
+        select coalesce(sum(e.prixAPayer), 0L)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate and e.medecin is null
+    """)
+    Long sumPrixAPayerNonAffectesByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    @Query("""
+        select distinct e.dateReception
+        from ExtractionDonnees e
+        order by e.dateReception desc
+    """)
+    List<java.time.LocalDate> findAllDatesDescending();
 }
+
