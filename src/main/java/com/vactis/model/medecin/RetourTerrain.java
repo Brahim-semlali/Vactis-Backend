@@ -22,6 +22,9 @@ public class RetourTerrain {
     @JoinColumn(name = "medecin_id", nullable = false)
     private Medecin medecin;
 
+    @Column(name = "nom_medecin", length = 255)
+    private String nomMedecin;
+
     @Column(nullable = false)
     private Double note; // Note sur 5 (ex: 4.0)
 
@@ -37,4 +40,14 @@ public class RetourTerrain {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @PrePersist
+    @PreUpdate
+    public void fillNomMedecin() {
+        if (medecin != null && (nomMedecin == null || nomMedecin.isBlank())) {
+            String nom = medecin.getNom() != null ? medecin.getNom() : "";
+            String prenom = medecin.getPrenom() != null ? medecin.getPrenom() : "";
+            this.nomMedecin = (nom + " " + prenom).trim();
+        }
+    }
 }

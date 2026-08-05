@@ -45,6 +45,9 @@ public class RetourTerrainService {
 
         RetourTerrain retour = new RetourTerrain();
         retour.setMedecin(medecin);
+        String nomComplet = ((medecin.getNom() != null ? medecin.getNom() : "") + " " +
+                (medecin.getPrenom() != null ? medecin.getPrenom() : "")).trim();
+        retour.setNomMedecin(nomComplet.isEmpty() ? null : nomComplet);
         retour.setNote(request.getNote());
         retour.setDateVisite(request.getDateVisite());
         retour.setCommentaire(request.getCommentaire() != null ? request.getCommentaire().trim() : null);

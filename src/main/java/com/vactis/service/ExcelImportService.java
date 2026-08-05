@@ -11,6 +11,7 @@ import com.vactis.model.medecin.StatutPilotage;
 import com.vactis.repository.ActionRepository;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
+import com.vactis.repository.RetourTerrainRepository;
 import com.vactis.model.Controle.TypeControle;
 
 import jakarta.persistence.EntityManager;
@@ -37,6 +38,7 @@ public class ExcelImportService {
     private final ExtractionDonneesRepository extractionDonneesRepository;
     private final MedecinRepository medecinRepository;
     private final ActionRepository actionRepository;
+    private final RetourTerrainRepository retourTerrainRepository;
     private final ResourceLoader resourceLoader;
 
     @PersistenceContext
@@ -71,9 +73,10 @@ public class ExcelImportService {
         }
 
         // Purger les anciennes données insérées précédemment depuis data.sql ou anciens tests
-        log.info("Purge des anciennes données (actions, data_fictif, medecins)...");
+        log.info("Purge des anciennes données (actions, retours_terrain, data_fictif, medecins)...");
         actionRepository.deleteAllInBatch();
         extractionDonneesRepository.deleteAllInBatch();
+        retourTerrainRepository.deleteAllInBatch();
         medecinRepository.deleteAllInBatch();
         medecinRepository.flush();
 
