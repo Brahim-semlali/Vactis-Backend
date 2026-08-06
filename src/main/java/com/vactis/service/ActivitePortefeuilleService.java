@@ -68,24 +68,35 @@ public class ActivitePortefeuilleService {
             "silence_critique", "onboarding", "a_reactiver", "exclu"
     );
 
-    // Calcule la répartition des 8 statuts VACTIS pour tous les médecins du portefeuille sur le mois M
+    // Calcule la répartition des 8 statuts VACTIS pour tous les médecins sur le mois M (avec liste des médecins par statut)
     public StatutRepartitionResponse getRepartitionStatuts(String moisParam) {
         YearMonth ym = parseOrGetDefaultMois(moisParam);
         List<Medecin> medecins = medecinRepository.findAll();
 
         Map<Long, String> statutMap = buildStatutMapForMonth(ym, medecins);
+        Map<String, Long> caM   = buildCaMap(ym);
+        Map<String, Long> casM  = buildCasMap(ym);
 
-        Map<String, Long> counts = new LinkedHashMap<>();
-        for (String s : ORDRE_AFFICHAGE) counts.put(s, 0L);
-        for (String statut : statutMap.values()) counts.merge(statut, 1L, Long::sum);
+        Map<String, List<MedecinStatutItem>> medecinsByStatut = new HashMap<>();
+        for (String s : ORDRE_AFFICHAGE) medecinsByStatut.put(s, new ArrayList<>());
+
+        for (Medecin m : medecins) {
+            String statut = statutMap.getOrDefault(m.getId(), "exclu");
+            MedecinStatutItem item = buildMedecinStatutItem(m, caM, casM);
+            medecinsByStatut.computeIfAbsent(statut, k -> new ArrayList<>()).add(item);
+        }
 
         List<StatutRepartitionResponse.StatutCount> statuts = ORDRE_AFFICHAGE.stream()
-                .map(s -> StatutRepartitionResponse.StatutCount.builder()
-                        .statut(s)
-                        .libelle(LIBELLE_STATUT.get(s))
-                        .couleur(COULEUR_STATUT.get(s))
-                        .count(counts.getOrDefault(s, 0L))
-                        .build())
+                .map(s -> {
+                    List<MedecinStatutItem> list = medecinsByStatut.getOrDefault(s, List.of());
+                    return StatutRepartitionResponse.StatutCount.builder()
+                            .statut(s)
+                            .libelle(LIBELLE_STATUT.get(s))
+                            .couleur(COULEUR_STATUT.get(s))
+                            .count(list.size())
+                            .medecins(list)
+                            .build();
+                })
                 .collect(Collectors.toList());
 
         return StatutRepartitionResponse.builder()
@@ -116,7 +127,6 @@ public class ActivitePortefeuilleService {
             boolean actifM   = caM.getOrDefault(key, 0L) > 0;
             boolean actifMm1 = caMm1.getOrDefault(key, 0L) > 0;
 
-            // Nouveau médecin : onboarding en M sans activité en M-1
             if ("onboarding".equals(statutM) && actifM && !actifMm1) {
                 nouveauxMedecins++;
                 continue;
@@ -142,7 +152,7 @@ public class ActivitePortefeuilleService {
                 .build();
     }
 
-    // Liste toutes les paires (statut M-1 → statut M) avec leur effectif, triées par effectif décroissant
+    // Liste toutes les paires (statut M-1 → statut M) avec leur effectif et liste des médecins concernés
     public FluxAgregesResponse getFluxAgreges(String moisParam) {
         YearMonth ymM   = parseOrGetDefaultMois(moisParam);
         YearMonth ymMm1 = ymM.minusMonths(1);
@@ -151,25 +161,32 @@ public class ActivitePortefeuilleService {
 
         Map<Long, String> statutsM   = buildStatutMapForMonth(ymM, medecins);
         Map<Long, String> statutsMm1 = buildStatutMapForMonth(ymMm1, medecins);
+        Map<String, Long> caM        = buildCaMap(ymM);
+        Map<String, Long> casM       = buildCasMap(ymM);
 
-        Map<String, Long> fluxCounts = new LinkedHashMap<>();
+        Map<String, List<MedecinStatutItem>> fluxMedecinsMap = new LinkedHashMap<>();
         for (Medecin m : medecins) {
-            String cle = statutsMm1.getOrDefault(m.getId(), "exclu")
-                    + "|" + statutsM.getOrDefault(m.getId(), "exclu");
-            fluxCounts.merge(cle, 1L, Long::sum);
+            String statM   = statutsM.getOrDefault(m.getId(), "exclu");
+            String statMm1 = statutsMm1.getOrDefault(m.getId(), "exclu");
+            String cle     = statMm1 + "|" + statM;
+            MedecinStatutItem item = buildMedecinStatutItem(m, caM, casM);
+            fluxMedecinsMap.computeIfAbsent(cle, k -> new ArrayList<>()).add(item);
         }
 
-        List<FluxAgregeItem> flux = fluxCounts.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+        List<FluxAgregeItem> flux = fluxMedecinsMap.entrySet().stream()
+                .sorted(Comparator.comparingInt((Map.Entry<String, List<MedecinStatutItem>> e) -> e.getValue().size()).reversed())
                 .map(entry -> {
-                    String[] parts = entry.getKey().split("\\|", 2);
-                    String statMm1 = parts[0], statM = parts[1];
+                    String[] parts  = entry.getKey().split("\\|", 2);
+                    String statMm1  = parts[0];
+                    String statM    = parts[1];
+                    List<MedecinStatutItem> list = entry.getValue();
                     return FluxAgregeItem.builder()
                             .statutPrecedent(statMm1)
                             .statutCourant(statM)
                             .couleurPrecedent(COULEUR_STATUT.getOrDefault(statMm1, "gray"))
                             .couleurCourant(COULEUR_STATUT.getOrDefault(statM, "gray"))
-                            .nombreMedecins(entry.getValue())
+                            .nombreMedecins(list.size())
+                            .medecins(list)
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -251,6 +268,21 @@ public class ActivitePortefeuilleService {
         if (ratio < 0.95) return "surveillance";
         if (ratio > 1.10) return "progression";
         return "actif_stable";
+    }
+
+    // Construit un MedecinStatutItem à partir d'un médecin et de ses valeurs M
+    private MedecinStatutItem buildMedecinStatutItem(Medecin m, Map<String, Long> caM, Map<String, Long> casM) {
+        String key = buildMedKey(m);
+        String nom = ((m.getNom() != null ? m.getNom() : "") + " "
+                + (m.getPrenom() != null ? m.getPrenom() : "")).trim().toUpperCase();
+        return MedecinStatutItem.builder()
+                .id(m.getId())
+                .codeMedecin(m.getCodeMedecin())
+                .nom(nom)
+                .specialite(m.getSpecialite())
+                .caM(caM.getOrDefault(key, 0L))
+                .casM(casM.getOrDefault(key, 0L))
+                .build();
     }
 
     // Construit la map {medecinId → statut VACTIS} pour tous les médecins sur le mois ym

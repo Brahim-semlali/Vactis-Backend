@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
-// Répartition des 8 statuts VACTIS pour le mois M avec compteur par statut
+// Répartition des 8 statuts VACTIS pour le mois M avec compteur et liste des médecins par statut
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -22,9 +22,10 @@ public class StatutRepartitionResponse {
     @AllArgsConstructor
     @Builder
     public static class StatutCount {
-        private String statut;   // clé technique (ex: "progression")
-        private String libelle;  // libellé affiché (ex: "Trajectoire favorable.")
-        private String couleur;  // couleur CSS (ex: "green", "red")
-        private long count;      // nombre de médecins dans ce statut
+        private String statut;                     // clé technique (ex: "progression")
+        private String libelle;                    // libellé affiché (ex: "Trajectoire favorable.")
+        private String couleur;                    // couleur CSS (ex: "green", "red")
+        private long count;                        // nombre de médecins dans ce statut
+        private List<MedecinStatutItem> medecins;  // liste des médecins dans ce statut
     }
 }
