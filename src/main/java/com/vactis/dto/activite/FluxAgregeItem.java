@@ -18,6 +18,8 @@ public class FluxAgregeItem {
     private String statutCourant;              // statut VACTIS en M
     private String couleurPrecedent;           // couleur CSS du statut M-1
     private String couleurCourant;             // couleur CSS du statut M
+    private String typeTransition;             // defavorable, favorable, stable, onboarding
+    private String couleurFlux;                // red, green, gray, blue
     private long nombreMedecins;               // nombre de médecins ayant effectué cette transition
     private List<MedecinStatutItem> medecins;  // liste des médecins concernés
 }

@@ -180,11 +180,37 @@ public class ActivitePortefeuilleService {
                     String statMm1  = parts[0];
                     String statM    = parts[1];
                     List<MedecinStatutItem> list = entry.getValue();
+
+                    int rangM   = RANG_STATUT.getOrDefault(statM, 8);
+                    int rangMm1 = RANG_STATUT.getOrDefault(statMm1, 8);
+
+                    String typeTransition;
+                    String couleurFlux;
+
+                    if ("onboarding".equals(statM) && ("exclu".equals(statMm1) || statMm1 == null)) {
+                        typeTransition = "onboarding";
+                        couleurFlux = "blue";
+                    } else if (rangM > rangMm1) {
+                        // Passage d'un statut fort à un statut moins fort -> Défavorable (Rouge)
+                        typeTransition = "defavorable";
+                        couleurFlux = "red";
+                    } else if (rangM < rangMm1) {
+                        // Passage d'un statut moins fort à un statut plus fort -> Favorable (Vert)
+                        typeTransition = "favorable";
+                        couleurFlux = "green";
+                    } else {
+                        // Statut inchangé -> Stable (Gris)
+                        typeTransition = "stable";
+                        couleurFlux = "gray";
+                    }
+
                     return FluxAgregeItem.builder()
                             .statutPrecedent(statMm1)
                             .statutCourant(statM)
                             .couleurPrecedent(COULEUR_STATUT.getOrDefault(statMm1, "gray"))
                             .couleurCourant(COULEUR_STATUT.getOrDefault(statM, "gray"))
+                            .typeTransition(typeTransition)
+                            .couleurFlux(couleurFlux)
                             .nombreMedecins(list.size())
                             .medecins(list)
                             .build();
