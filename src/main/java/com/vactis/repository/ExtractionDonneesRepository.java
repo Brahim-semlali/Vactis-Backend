@@ -86,4 +86,57 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
         order by e.dateReception desc
     """)
     List<java.time.LocalDate> findAllDatesDescending();
+
+    // -------------------------------------------------------------------------
+    // Requêtes Niveau 2 — Dynamique portefeuille médecins
+    // -------------------------------------------------------------------------
+
+    /**
+     * Calcule le CA total (prix à payer) par médecin sur une période donnée.
+     * Retourne une liste de tableaux [medecinId, caTotal].
+     * Seuls les médecins avec au moins un dossier affecté sur la période sont inclus.
+     */
+    @Query("""
+        select e.medecin.id, coalesce(sum(e.prixAPayer), 0L)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate
+          and e.medecin is not null
+        group by e.medecin.id
+    """)
+    List<Object[]> sumCaByMedecinAndDateRange(
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate
+    );
+
+    /**
+     * Compte le nombre de dossiers (cas) par médecin sur une période donnée.
+     * Retourne une liste de tableaux [medecinId, nombreCas].
+     * Seuls les médecins avec au moins un dossier affecté sur la période sont inclus.
+     */
+    @Query("""
+        select e.medecin.id, count(e)
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate
+          and e.medecin is not null
+        group by e.medecin.id
+    """)
+    List<Object[]> countCasByMedecinAndDateRange(
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate
+    );
+
+    /**
+     * Retourne les IDs distincts des médecins ayant eu au moins un dossier
+     * sur la période donnée (utilisé pour distinguer "à réactiver" vs "exclu").
+     */
+    @Query("""
+        select distinct e.medecin.id
+        from ExtractionDonnees e
+        where e.dateReception >= :startDate and e.dateReception <= :endDate
+          and e.medecin is not null
+    """)
+    List<Long> findMedecinIdsWithActivityInRange(
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate
+    );
 }
