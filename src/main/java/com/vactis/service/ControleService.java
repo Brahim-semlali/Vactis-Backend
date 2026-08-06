@@ -11,20 +11,24 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Objects;
 
+// Service métier pour la gestion et l'application des règles de contrôle (seuils CA et scores)
 @Service
 @RequiredArgsConstructor
 public class ControleService {
     private final ControleRepository controleRepository;
 
+    // Retourne les règles d'un type donné, triées par CA minimum
     public List<Controle> findByType(TypeControle type) {
         return controleRepository.findByTypeOrderByMinCAAsc(type);
     }
 
+    // Crée et valide une nouvelle règle de contrôle
     public Controle create(Controle controle) {
         validateControle(controle);
         return controleRepository.save(controle);
     }
 
+    // Met à jour une règle de contrôle existante
     public Controle update(Long idControle, Controle payload) {
         Controle existing = controleRepository.findById(idControle)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Règle de contrôle introuvable"));
@@ -42,6 +46,7 @@ public class ControleService {
         return controleRepository.save(existing);
     }
 
+    // Supprime une règle de contrôle par son identifiant
     public void delete(Long idControle) {
         if (!controleRepository.existsById(idControle)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Règle de contrôle introuvable");
@@ -49,6 +54,7 @@ public class ControleService {
         controleRepository.deleteById(idControle);
     }
 
+    // Détermine l'état dynamique correspondant à un montant de CA (ex: ACTIF, PERTE)
     public String determinerEtat(TypeControle type, Long montant) {
         List<Controle> regles = controleRepository.findByTypeAndActifTrue(type);
 
@@ -64,6 +70,7 @@ public class ControleService {
         return null;
     }
 
+    // Détermine le segment (A/B/C/D) correspondant à un score de valeur (0-100)
     public String determinerEtatParScore(TypeControle type, Double score) {
         if (score == null) return null;
         List<Controle> regles = controleRepository.findByTypeAndActifTrue(type);
@@ -80,6 +87,7 @@ public class ControleService {
         return null;
     }
 
+    // Retourne les libellés d'états actifs distincts pour un type de règle
     public List<String> getEtatsActifs(TypeControle type) {
         return controleRepository.findByTypeAndActifTrue(type).stream()
                 .map(Controle::getEtat)
@@ -88,6 +96,7 @@ public class ControleService {
                 .toList();
     }
 
+    // Valide la cohérence des champs d'une règle de contrôle avant enregistrement
     private void validateControle(Controle controle) {
         if (controle.getType() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le type de contrôle est obligatoire");

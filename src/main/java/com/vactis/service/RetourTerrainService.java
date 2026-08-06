@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+// Service métier pour la saisie et la consultation des retours terrain (visites médicales)
 @Service
 @RequiredArgsConstructor
 public class RetourTerrainService {
@@ -22,10 +23,7 @@ public class RetourTerrainService {
     private final RetourTerrainRepository retourTerrainRepository;
     private final MedecinRepository medecinRepository;
 
-    /**
-     * Crée une NOUVELLE ligne de retour terrain historisée.
-     * Ne modifie ni n'écrase JAMAIS une ligne existante.
-     */
+    // Crée un nouveau retour terrain historisé — ne modifie jamais une visite existante
     @Transactional
     public RetourTerrain addRetourTerrain(Long medecinId, RetourTerrainRequest request) {
         Medecin medecin = medecinRepository.findById(medecinId)
@@ -60,6 +58,7 @@ public class RetourTerrainService {
         return retourTerrainRepository.save(retour);
     }
 
+    // Résout l'identité du visiteur depuis la requête ou le contexte de sécurité Spring
     private String resolveVisiteur(String visiteurParam) {
         if (visiteurParam != null && !visiteurParam.isBlank()) {
             return visiteurParam.trim();
@@ -90,18 +89,14 @@ public class RetourTerrainService {
         return null;
     }
 
-    /**
-     * Récupère toutes les visites d'un médecin par ordre chronologique décroissant.
-     */
+    // Retourne toutes les visites d'un médecin, de la plus récente à la plus ancienne
     public List<RetourTerrain> getRetoursTerrainByMedecin(Long medecinId) {
         Medecin medecin = medecinRepository.findById(medecinId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable."));
         return retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
     }
 
-    /**
-     * Récupère la dernière visite enregistrée d'un médecin.
-     */
+    // Retourne la dernière visite enregistrée pour un médecin
     public Optional<RetourTerrain> getDerniereVisite(Long medecinId) {
         Medecin medecin = medecinRepository.findById(medecinId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable."));

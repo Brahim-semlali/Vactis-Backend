@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+// Contrôleur REST pour le suivi de l'activité mensuelle (KPIs, comparaisons, mois disponibles)
 @RestController
 @RequestMapping("/api/activite")
 @RequiredArgsConstructor
@@ -20,6 +21,7 @@ public class ActiviteController {
 
     private final ActiviteService activiteService;
 
+    // Retourne les KPIs d'activité pour un mois donné (CA, cas, médecins actifs, etc.)
     @GetMapping("/kpis-mensuels")
     public ResponseEntity<KpiMensuelResponse> getKpisMensuels(
             @RequestParam(name = "mois", required = false) String mois
@@ -27,6 +29,7 @@ public class ActiviteController {
         return ResponseEntity.ok(activiteService.getKpisMensuels(mois));
     }
 
+    // Compare les métriques du mois sélectionné avec M-1 et une fenêtre de référence glissante
     @GetMapping("/comparaison")
     public ResponseEntity<ComparaisonResponse> getComparaison(
             @RequestParam(name = "mois", required = false) String mois,
@@ -36,6 +39,7 @@ public class ActiviteController {
         return ResponseEntity.ok(activiteService.getComparaison(mois, metrique, fenetreRef));
     }
 
+    // Retourne la liste des mois disponibles en base, du plus récent au plus ancien
     @GetMapping("/mois-disponibles")
     public ResponseEntity<List<String>> getMoisDisponibles() {
         return ResponseEntity.ok(activiteService.getMoisDisponibles());

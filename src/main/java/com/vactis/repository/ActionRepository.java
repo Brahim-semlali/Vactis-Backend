@@ -12,21 +12,27 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+// Repository JPA pour l'accès aux données des actions de pilotage commercial
 @Repository
 public interface ActionRepository extends JpaRepository<Action, Long> {
 
+    // Compte le nombre total d'actions en base
     @Query("""
         select count(a)
         from Action a
     """)
     Long countAllActions();
 
+    // Compte les actions par état (PLANIFIEE, REALISEE, etc.)
     Long countByEtatAction(EtatAction etatAction);
 
+    // Compte les actions marquées comme backlog
     Long countByBacklogTrue();
 
+    // Compte les actions en urgence silence critique
     Long countByUrgenceSilenceTrue();
 
+    // Recherche multi-critères sur les actions avec jointure sur le médecin
     @Query("""
         select a
         from Action a
@@ -59,6 +65,7 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
             @Param("lieuOrganisme") String lieuOrganisme
     );
 
+    // Retourne la liste distincte des intitulés d'actions recommandées
     @Query("""
         select distinct a.actionRecommandee
         from Action a
@@ -67,6 +74,7 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
     """)
     List<String> findDistinctActions();
 
+    // Retourne la liste distincte des commerciaux enregistrés dans les actions
     @Query("""
         select distinct a.commercial
         from Action a
@@ -75,6 +83,7 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
     """)
     List<String> findDistinctCommerciaux();
 
+    // Retourne la liste distincte des lieux/organismes enregistrés dans les actions
     @Query("""
         select distinct a.lieuOrganisme
         from Action a

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+// Contrôleur REST d'authentification : inscription, connexion et vérification de l'état du compte
 @Slf4j
 @RestController
 @RequestMapping("/api/auth")
@@ -24,6 +25,7 @@ public class AuthController {
 
     private final AuthService authService;
 
+    // Inscrit un nouvel utilisateur et retourne un token JWT
     @PostMapping("/register")
     public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
         log.info("[AUTH-API] POST /register | username={} | email={}",
@@ -31,12 +33,14 @@ public class AuthController {
         return authService.register(request);
     }
 
+    // Authentifie un utilisateur et retourne un token JWT en cas de succès
     @PostMapping("/login")
     public AuthResponse login(@RequestBody LoginRequest request) {
         log.info("[AUTH-API] POST /login | username={}", request.username());
         return authService.login(request);
     }
 
+    // Vérifie le statut du compte (suspension, tentatives échouées, etc.)
     @GetMapping("/account-status")
     public AccountStatusResponse accountStatus(@RequestParam String username) {
         log.info("[AUTH-API] GET /account-status | username={}", username);

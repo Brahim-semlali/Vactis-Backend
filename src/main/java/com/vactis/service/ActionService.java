@@ -16,20 +16,24 @@ import org.springframework.stereotype.Service;
 import com.vactis.model.Controle.TypeControle;
 import java.util.List;
 
+// Service métier pour la gestion, la recherche et le calcul des indicateurs des actions de pilotage
 @Service
 @RequiredArgsConstructor
 public class ActionService {
     private final ActionRepository actionRepository;
     private final ControleService controleService;
 
+    // Retourne toutes les actions en base
     public List<Action> findAll() {
         return actionRepository.findAll();
     }
 
+    // Recherche une action par son identifiant
     public Action findById(Long id) {
         return actionRepository.findById(id).orElse(null);
     }
 
+    // Recherche les actions selon plusieurs critères de filtrage
     public List<Action> searchActions(
             String search,
             StatutPilotage statut,
@@ -54,6 +58,7 @@ public class ActionService {
         );
     }
 
+    // Retourne les options de filtres distinctes (actions, commerciaux, lieux, statuts, segments)
     public ActionFilterOptionsResponse getFilterOptions() {
         ActionFilterOptionsResponse filters = new ActionFilterOptionsResponse();
         filters.setActions(actionRepository.findDistinctActions());
@@ -64,6 +69,7 @@ public class ActionService {
         return filters;
     }
 
+    // Calcule les KPIs des actions (total, planifiées, réalisées, backlog, urgence silence)
     public ActionKpiResponse getKpis() {
         ActionKpiResponse kpis = new ActionKpiResponse();
         kpis.setActionsGenerees(actionRepository.countAllActions());
@@ -74,10 +80,12 @@ public class ActionService {
         return kpis;
     }
 
+    // Compte les actions à l'état PLANIFIEE
     public Long countPlanifiees() {
         return actionRepository.countByEtatAction(EtatAction.PLANIFIEE);
     }
 
+    // Construit la réponse complète de la page des actions (liste, KPIs, méta, filtres)
     public ActionPageResponse getActionPage(
             String search,
             StatutPilotage statut,
@@ -113,11 +121,11 @@ public class ActionService {
         return response;
     }
 
+    // Nettoie et normalise une chaîne (trim + null si vide)
     private String normalize(String value) {
         if (value == null) {
             return null;
         }
-
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }

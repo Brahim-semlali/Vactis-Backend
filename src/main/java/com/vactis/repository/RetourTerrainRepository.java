@@ -8,12 +8,13 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+// Repository JPA pour l'historique des retours terrain (visites médicales)
 @Repository
 public interface RetourTerrainRepository extends JpaRepository<RetourTerrain, Long> {
 
-    /** Dernière visite enregistrée pour un médecin (priorité date_visite DESC puis created_at DESC). */
+    // Retourne la dernière visite enregistrée pour un médecin (date DESC, created_at DESC)
     Optional<RetourTerrain> findFirstByMedecinOrderByDateVisiteDescCreatedAtDesc(Medecin medecin);
 
-    /** Toutes les visites d'un médecin, triées de la plus récente à la plus ancienne. */
+    // Retourne toutes les visites d'un médecin, de la plus récente à la plus ancienne
     List<RetourTerrain> findByMedecinOrderByDateVisiteDescCreatedAtDesc(Medecin medecin);
 }

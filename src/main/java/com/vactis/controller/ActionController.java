@@ -14,12 +14,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+// Contrôleur REST exposant les endpoints de gestion des actions de pilotage commercial
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/actions")
 public class ActionController {
     private final ActionService actionService;
 
+    // Récupère la liste des actions filtrées avec KPIs, métadonnées et options de filtres
     @GetMapping
     public ActionPageResponse getActions(
             @RequestParam(required = false) String search,
@@ -45,6 +47,7 @@ public class ActionController {
         );
     }
 
+    // Récupère une action par son identifiant unique
     @GetMapping("/{id}")
     public Action getActionById(@PathVariable Long id) {
         return actionService.findById(id);

@@ -16,6 +16,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
+// Service métier pour l'analyse de l'activité mensuelle (KPIs et comparaisons)
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -26,6 +27,7 @@ public class ActiviteService {
 
     private static final DateTimeFormatter YYYY_MM = DateTimeFormatter.ofPattern("yyyy-MM");
 
+    // Retourne la liste des mois disponibles en base, du plus récent au plus ancien
     public List<String> getMoisDisponibles() {
         List<LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
         if (dates.isEmpty()) {
@@ -42,6 +44,7 @@ public class ActiviteService {
         return months;
     }
 
+    // Calcule les KPIs d'activité (CA, cas, médecins actifs, non affectés) pour un mois donné
     public KpiMensuelResponse getKpisMensuels(String moisParam) {
         YearMonth ym = parseOrGetDefaultMois(moisParam);
         LocalDate startDate = ym.atDay(1);
@@ -73,6 +76,7 @@ public class ActiviteService {
                 .build();
     }
 
+    // Compare les métriques du mois M avec M-1 et une fenêtre de référence glissante
     public ComparaisonResponse getComparaison(String moisParam, String metrique, Integer fenetreRef) {
         YearMonth ymM = parseOrGetDefaultMois(moisParam);
         YearMonth ymMMinus1 = ymM.minusMonths(1);
@@ -116,6 +120,7 @@ public class ActiviteService {
                 .build();
     }
 
+    // Construit la structure de réponse avec les variations en valeur et en pourcentage
     private ComparaisonMetriqueResponse buildMetriqueResponse(double m, double mMinus1, double ref) {
         double diffMMinus1 = Math.round((m - mMinus1) * 100.0) / 100.0;
         double pctMMinus1 = mMinus1 > 0 ? Math.round(((m - mMinus1) / mMinus1 * 100.0) * 10.0) / 10.0 : 0.0;
@@ -134,16 +139,19 @@ public class ActiviteService {
                 .build();
     }
 
+    // Compte le nombre de cas pour un mois donné
     private double getCasForMonth(YearMonth ym) {
         Long count = extractionDonneesRepository.countCasByDateRange(ym.atDay(1), ym.atEndOfMonth());
         return count != null ? count.doubleValue() : 0.0;
     }
 
+    // Calcule le CA pour un mois donné
     private double getCaForMonth(YearMonth ym) {
         Long sum = extractionDonneesRepository.sumPrixAPayerByDateRange(ym.atDay(1), ym.atEndOfMonth());
         return sum != null ? sum.doubleValue() : 0.0;
     }
 
+    // Résout le mois à analyser depuis le paramètre ou détermine le mois par défaut
     private YearMonth parseOrGetDefaultMois(String moisParam) {
         if (moisParam != null && !moisParam.isBlank()) {
             try {

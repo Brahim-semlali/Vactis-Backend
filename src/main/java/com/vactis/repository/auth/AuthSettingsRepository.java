@@ -5,6 +5,7 @@ import com.vactis.model.auth.AuthSettings;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+// Repository JPA pour la configuration de l'authentification (tentatives, durée de suspension)
 @Repository
 public interface AuthSettingsRepository extends JpaRepository<AuthSettings, Long> {
 }

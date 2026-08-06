@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
+// Service métier pour la gestion du portefeuille médecins, la segmentation et le calcul des KPIs
 @Service
 @RequiredArgsConstructor
 public class MedecinService {
@@ -27,16 +28,17 @@ public class MedecinService {
     private final ControleService controleService;
     private final SegmentationService segmentationService;
 
+    // Déclenche la synchronisation des médecins depuis le fichier Excel fictif
     public void syncMedecinsFromDataFictif() {
         excelImportService.importFictifExcelAndSyncMedecins();
     }
 
-    //Recupere tous les medecins
+    // Retourne tous les médecins du portefeuille
     public List<Medecin> findAll(){
         return medecinRepository.findAll();
     }
 
-    //Retrouve un medecin par son code
+    // Recherche un médecin par son code unique (ex: MED001)
     public Medecin findByCodeMedecin(String codeMedecin) {
         if (codeMedecin == null) {
             return null;
@@ -50,12 +52,12 @@ public class MedecinService {
         return medecinRepository.findByCodeMedecinIgnoreCase(normalizedCode).orElse(null);
     }
 
-    //Retrouve un medecin par son id
+    // Recherche un médecin par son identifiant technique
     public Medecin findById(Long id){
         return medecinRepository.findById(id).orElse(null);
     }
 
-    //Met à jour uniquement le champ noteInput (1-5 ou null) — sans recalcul de segment
+    // Met à jour la note de potentiel commercial saisie manuellement (1-5 ou null)
     public Medecin updateNoteInput(Long id, Double noteInput) {
         Medecin medecin = medecinRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable"));
@@ -69,32 +71,32 @@ public class MedecinService {
         return medecinRepository.save(medecin);
     }
 
-    //Retrouve medecins par statu
+    // Retourne les médecins par statut de performance
     public List<Medecin> findByStatut(StatutMedecin statutMedecin){
         return medecinRepository.findByStatut(statutMedecin);
     }
 
-    //le nombre des medecins
+    // Compte le nombre total de médecins en base
     public Long countAllMedecins(){
         return medecinRepository.countAllMedecins();
     }
 
-    //Retrouve les medecins par segment
+    // Retourne les médecins d'un segment donné
     public List<Medecin> findMedecinsBySegement(String segment){
         return medecinRepository.findBySegment(segment);
     }
 
-    //le nombre des medecins par statu pilotage
+    // Compte les médecins par statut de pilotage commercial
     public Long countAllByStatutPilotage(StatutPilotage statutPilotage){
         return medecinRepository.countAllByStatutPilotage(statutPilotage);
     }
 
-    //Retrouve les medecins par statu pilotage
+    // Retourne les médecins par statut de pilotage commercial
     public List<Medecin> findMedecinsByStatusPilotage(StatutPilotage statutPilotage){
         return medecinRepository.findAllByStatutPilotage(statutPilotage);
     }
 
-    //Recherche les medecins avec filtres
+    // Recherche les médecins selon des critères multiples (nom, segment, spécialité, etc.)
     public List<Medecin> searchMedecins(
             String search,
             StatutPilotage statutPilotage,
@@ -115,7 +117,7 @@ public class MedecinService {
         );
     }
 
-    //Recupere les options des filtres
+    // Retourne les options de filtres distinctes (spécialités, organismes, statuts, segments)
     public MedecinFilterOptionsResponse getFilterOptions(){
         MedecinFilterOptionsResponse filters = new MedecinFilterOptionsResponse();
         filters.setSpecialites(medecinRepository.findDistinctSpecialites());
@@ -125,7 +127,7 @@ public class MedecinService {
         return filters;
     }
 
-    //Recupere les KPI de la page medecins
+    // Calcule les KPIs du portefeuille médecins (total, segments, pilotage, actions en cours)
     public MedecinKpiResponse getKpis(){
         MedecinKpiResponse kpis = new MedecinKpiResponse();
         kpis.setTotal(medecinRepository.countAllMedecins());
@@ -145,6 +147,7 @@ public class MedecinService {
         return kpis;
     }
 
+    // Recalcule dynamiquement les statuts et segments (A/B/C/D) de tous les médecins
     public void recalculerStatutsEtSegmentsDynamiques() {
         List<Medecin> medecins = medecinRepository.findAll();
         boolean modifie = false;
@@ -167,7 +170,7 @@ public class MedecinService {
         segmentationService.recalculerSegmentationPortefeuille();
     }
 
-    //Recupere la page medecins complete
+    // Construit la réponse complète de la page médecins (liste filtrée, KPIs, méta, filtres)
     public MedecinPageResponse getMedecinPage(
             String search,
             StatutPilotage statutPilotage,
@@ -201,6 +204,7 @@ public class MedecinService {
         return response;
     }
 
+    // Nettoie et normalise une chaîne (trim + null si vide)
     private String normalize(String value){
         if(value == null){
             return null;

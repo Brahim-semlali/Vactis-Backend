@@ -17,28 +17,33 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+// Contrôleur REST pour la gestion des règles de contrôle (seuils CA, statuts et segments)
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/controle")
 public class ControleController {
     private final ControleService controleService;
 
+    // Récupère les règles de contrôle d'un type donné, triées par CA minimum
     @GetMapping("/type/{type}")
     public List<Controle> findByType(@PathVariable TypeControle type) {
         return controleService.findByType(type);
     }
 
+    // Crée une nouvelle règle de contrôle
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Controle createControle(@RequestBody Controle controle) {
         return controleService.create(controle);
     }
 
+    // Met à jour une règle de contrôle existante
     @PutMapping("/{idControle}")
     public Controle updateControle(@PathVariable Long idControle, @RequestBody Controle controle) {
         return controleService.update(idControle, controle);
     }
 
+    // Supprime une règle de contrôle par son identifiant
     @DeleteMapping("/{idControle}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteControle(@PathVariable Long idControle) {

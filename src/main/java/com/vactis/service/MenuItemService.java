@@ -13,13 +13,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+// Service métier pour la gestion du menu dynamique et des accès utilisateurs
 @Service
 @RequiredArgsConstructor
 public class MenuItemService {
     private final MenuItemRepository menuItemRepository;
     private final MenuUserAccessRepository menuUserAccessRepository;
 
-    //Ajouter Menu
+    // Ajoute une nouvelle rubrique de menu et configure ses accès
     @Transactional
     public void AddMenu(MenuItem menuItem){
         if (menuItem.getIsVisible() == null) {
@@ -29,14 +30,14 @@ public class MenuItemService {
         saveAccess(saved.getIdMenu(), menuItem.getAllowedUserIds());
     }
 
-    //supprimer Menu
+    // Supprime une rubrique de menu et toutes ses autorisations associées
     @Transactional
     public void DeleteMenu(Long id ){
         menuUserAccessRepository.deleteByIdMenu(id);
         menuItemRepository.deleteById(id);
     }
 
-    //modifier Menu
+    // Met à jour les propriétés d'un menu et réassocie ses accès
     @Transactional
     public void UpdateMenu(Long id , MenuItem menuItem){
         MenuItem Existed = menuItemRepository.findById(id).orElseThrow();
@@ -53,7 +54,7 @@ public class MenuItemService {
         saveAccess(id, menuItem.getAllowedUserIds());
     }
 
-    //afficher Menu
+    // Retourne les menus visibles autorisés pour l'utilisateur (tous si ADMIN, filtrés si USER)
     public List<MenuItem> getAllMenu(Users user){
         if (user.getRole() == Role.ADMIN) {
             return menuItemRepository.findByIsVisibleTrueOrderByOrder();
@@ -68,7 +69,7 @@ public class MenuItemService {
                 .toList();
     }
 
-    //donner acces a un user pour un menu
+    // Accorde l'accès à une rubrique de menu pour un utilisateur donné
     @Transactional
     public void GiveAccess(Long idMenu, Long idUser){
         MenuUserAccess access = new MenuUserAccess();
@@ -77,6 +78,7 @@ public class MenuItemService {
         menuUserAccessRepository.save(access);
     }
 
+    // Enregistre les autorisations d'accès pour une liste d'utilisateurs
     private void saveAccess(Long idMenu, List<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return;

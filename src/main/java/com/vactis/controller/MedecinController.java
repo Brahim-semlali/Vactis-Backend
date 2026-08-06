@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+// Contrôleur REST pour la gestion du portefeuille médecins et des retours terrain
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/medecins")
@@ -25,7 +26,7 @@ public class MedecinController {
     private final MedecinService medecinService;
     private final RetourTerrainService retourTerrainService;
 
-    //Recupere la page medecins avec filtresR
+    // Récupère la page des médecins avec filtres, KPIs et métadonnées
     @GetMapping
     public MedecinPageResponse getMedecins(
             @RequestParam(required = false) String search,
@@ -47,29 +48,25 @@ public class MedecinController {
         );
     }
 
-    //Retrouver un medcin par son code
+    // Recherche un médecin par son code unique (ex: MED001)
     @GetMapping("/code/{code}")
     public Medecin getMedecinByCode(@PathVariable String code){
         return medecinService.findByCodeMedecin(code);
     }
 
-    //Retrouve un medecin par son id
+    // Récupère un médecin par son identifiant technique
     @GetMapping("/{id}")
     public Medecin getMedecinById(@PathVariable Long id){
         return medecinService.findById(id);
     }
 
-    //Synchronise / extrait les medecins depuis la table data_fictif
-    @org.springframework.web.bind.annotation.PostMapping("/sync")
+    // Synchronise les médecins depuis le fichier Excel des données fictives
+    @PostMapping("/sync")
     public void syncFromDataFictif(){
         medecinService.syncMedecinsFromDataFictif();
     }
 
-    /**
-     * Met à jour uniquement le champ noteInput du médecin (Potentiel commercial).
-     * Body : { "noteInput": 4.0 }  ou  { "noteInput": null } pour effacer.
-     * Retourne 400 si la valeur est hors de l'intervalle [1, 5].
-     */
+    // Met à jour la note de potentiel commercial saisie manuellement (1-5 ou null)
     @PatchMapping("/{id}/note-input")
     public ResponseEntity<Medecin> updateNoteInput(
             @PathVariable Long id,
@@ -83,10 +80,7 @@ public class MedecinController {
         return ResponseEntity.ok(updated);
     }
 
-    /**
-     * Ajoute un nouveau retour terrain (visite terrain historisée) pour un médecin.
-     * Ne modifie ni n'écrase jamais une visite existante.
-     */
+    // Ajoute un nouveau retour terrain (visite historisée) pour un médecin
     @PostMapping("/{id}/retours-terrain")
     public ResponseEntity<RetourTerrain> addRetourTerrain(
             @PathVariable Long id,
@@ -96,13 +90,10 @@ public class MedecinController {
         return ResponseEntity.status(HttpStatus.CREATED).body(retour);
     }
 
-    /**
-     * Récupère la liste des retours terrain d'un médecin (du plus récent au plus ancien).
-     */
+    // Récupère l'historique des visites terrain d'un médecin, du plus récent au plus ancien
     @GetMapping("/{id}/retours-terrain")
     public ResponseEntity<List<RetourTerrain>> getRetoursTerrain(@PathVariable Long id) {
         List<RetourTerrain> retours = retourTerrainService.getRetoursTerrainByMedecin(id);
         return ResponseEntity.ok(retours);
     }
 }
-
