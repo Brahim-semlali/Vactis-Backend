@@ -5,6 +5,7 @@ import com.vactis.dto.activite.ComparaisonResponse;
 import com.vactis.dto.activite.KpiMensuelResponse;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
+import com.vactis.repository.RetourTerrainRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,8 +14,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 // Service métier pour l'analyse de l'activité mensuelle (KPIs et comparaisons)
 @Service
@@ -24,23 +24,43 @@ public class ActiviteService {
 
     private final ExtractionDonneesRepository extractionDonneesRepository;
     private final MedecinRepository medecinRepository;
+    private final RetourTerrainRepository retourTerrainRepository;
 
     private static final DateTimeFormatter YYYY_MM = DateTimeFormatter.ofPattern("yyyy-MM");
 
-    // Retourne la liste des mois disponibles en base, du plus récent au plus ancien
+    // Retourne la liste des mois disponibles en base (labo + retours terrain + mois actuel), du plus récent au plus ancien
     public List<String> getMoisDisponibles() {
-        List<LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
-        if (dates.isEmpty()) {
-            return List.of(YearMonth.now().format(YYYY_MM));
+        Set<String> monthsSet = new LinkedHashSet<>();
+
+        // 1. Mois actuel
+        monthsSet.add(YearMonth.now().format(YYYY_MM));
+
+        // 2. Mois des retours terrain
+        try {
+            List<LocalDate> datesRetour = retourTerrainRepository.findAllDatesDescending();
+            for (LocalDate d : datesRetour) {
+                if (d != null) {
+                    monthsSet.add(d.format(YYYY_MM));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Erreur récupération dates retours terrain: {}", e.getMessage());
         }
 
-        List<String> months = new ArrayList<>();
-        for (LocalDate d : dates) {
-            String ym = d.format(YYYY_MM);
-            if (!months.contains(ym)) {
-                months.add(ym);
+        // 3. Mois de l'extraction labo
+        try {
+            List<LocalDate> datesLabo = extractionDonneesRepository.findAllDatesDescending();
+            for (LocalDate d : datesLabo) {
+                if (d != null) {
+                    monthsSet.add(d.format(YYYY_MM));
+                }
             }
+        } catch (Exception e) {
+            log.warn("Erreur récupération dates labo: {}", e.getMessage());
         }
+
+        List<String> months = new ArrayList<>(monthsSet);
+        months.sort(Comparator.reverseOrder());
         return months;
     }
 

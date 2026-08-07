@@ -72,13 +72,19 @@ public class ExcelImportService {
             log.debug("Ignoré lors du nettoyage des contraintes: {}", ex.getMessage());
         }
 
-        // Purger les anciennes données insérées précédemment depuis data.sql ou anciens tests
-        log.info("Purge des anciennes données (actions, retours_terrain, data_fictif, medecins)...");
+        // Purger uniquement les données d'extraction et les actions générées lors de l'import
+        log.info("Purge et ré-importation des actions et dossiers data_fictif (retours_terrain conservés)...");
         actionRepository.deleteAllInBatch();
         extractionDonneesRepository.deleteAllInBatch();
-        retourTerrainRepository.deleteAllInBatch();
-        medecinRepository.deleteAllInBatch();
-        medecinRepository.flush();
+        extractionDonneesRepository.flush();
+
+        // Récupérer les médecins existants indexés par codeMedecin pour éviter de casser les clés étrangères de retours_terrain
+        Map<String, Medecin> existingMedecinsMap = new HashMap<>();
+        for (Medecin m : medecinRepository.findAll()) {
+            if (m.getCodeMedecin() != null) {
+                existingMedecinsMap.put(m.getCodeMedecin().toUpperCase(), m);
+            }
+        }
 
         Workbook workbook = WorkbookFactory.create(inputStream);
         Sheet sheet = workbook.getSheetAt(0);
@@ -119,7 +125,7 @@ public class ExcelImportService {
 
         log.info("Lecture Excel terminée: {} dossiers trouvés pour {} médecins distincts.", rawRows.size(), doctorGroupMap.size());
 
-        // 1. Extraire et insérer uniquement les médecins issus de data_fictif
+        // 1. Extraire et synchroniser (upsert) les médecins issus de data_fictif
         Map<String, Medecin> doctorEntityMap = new HashMap<>();
         List<Medecin> savedMedecins = new ArrayList<>();
         int codeSeq = 1;
@@ -137,8 +143,13 @@ public class ExcelImportService {
             String mainSpec = docRows.stream().map(r -> r.specialite).filter(s -> !s.isEmpty()).findFirst().orElse("Autre");
             String mainOrg = docRows.stream().map(r -> r.organisme).filter(o -> !o.isEmpty()).findFirst().orElse("Cabinet / Hôpital");
 
-            Medecin medecin = new Medecin();
-            medecin.setCodeMedecin(String.format("MED%03d", codeSeq++));
+            String expectedCode = String.format("MED%03d", codeSeq++);
+            Medecin medecin = existingMedecinsMap.get(expectedCode.toUpperCase());
+            if (medecin == null) {
+                medecin = new Medecin();
+                medecin.setCodeMedecin(expectedCode);
+            }
+
             medecin.setPrenom(parsedName[0]);
             medecin.setNom(parsedName[1]);
             medecin.setSpecialite(mainSpec);

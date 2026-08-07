@@ -2,7 +2,9 @@ package com.vactis.service;
 
 import com.vactis.dto.medecin.RetourTerrainRequest;
 import com.vactis.model.medecin.Medecin;
+import com.vactis.model.medecin.QualificationVisite;
 import com.vactis.model.medecin.RetourTerrain;
+import com.vactis.model.medecin.StatutVisite;
 import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.RetourTerrainRepository;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +56,27 @@ public class RetourTerrainService {
         String visiteur = resolveVisiteur(request.getVisiteur());
         retour.setVisiteur(visiteur);
 
+        // --- Niveau 3 : mapping des champs d'exécution terrain ---
+
+        // Statut d'exécution (REALISEE par défaut si non fourni)
+        retour.setStatutVisite(parseEnumSafe(
+                StatutVisite.class,
+                request.getStatutVisite(),
+                StatutVisite.REALISEE,
+                "Statut visite invalide. Valeurs acceptées : REALISEE, NON_REALISEE, NON_RENSEIGNE."
+        ));
+
+        // Qualification du retour (NON_RENSEIGNE par défaut si non fourni)
+        retour.setQualification(parseEnumSafe(
+                QualificationVisite.class,
+                request.getQualification(),
+                QualificationVisite.NON_RENSEIGNE,
+                "Qualification invalide. Valeurs acceptées : FAVORABLE, DEFAVORABLE, NEUTRE, NON_RENSEIGNE."
+        ));
+
+        // Réclamation (false par défaut si non fourni)
+        retour.setReclamation(request.getReclamation() != null ? request.getReclamation() : false);
+
         // Sauvegarde d'une nouvelle instance (insert)
         return retourTerrainRepository.save(retour);
     }
@@ -101,5 +124,21 @@ public class RetourTerrainService {
         Medecin medecin = medecinRepository.findById(medecinId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable."));
         return retourTerrainRepository.findFirstByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
+    }
+
+    /**
+     * Convertit une chaîne en enum de manière sécurisée.
+     * Retourne la valeur par défaut si la chaîne est null/vide.
+     * Lève une ResponseStatusException 400 si la valeur est invalide (au lieu d'un 500 IllegalArgumentException).
+     */
+    private <E extends Enum<E>> E parseEnumSafe(Class<E> enumType, String raw, E defaultValue, String errorMessage) {
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Enum.valueOf(enumType, raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, errorMessage);
+        }
     }
 }

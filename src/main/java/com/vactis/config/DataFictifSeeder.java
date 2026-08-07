@@ -15,10 +15,15 @@ import org.springframework.stereotype.Component;
 public class DataFictifSeeder implements CommandLineRunner {
 
     private final ExcelImportService excelImportService;
+    private final com.vactis.repository.MedecinRepository medecinRepository;
 
     @Override
     public void run(String... args) {
-        log.info("Démarrage de la synchronisation exclusive depuis data_fictif...");
-        excelImportService.importFictifExcelAndSyncMedecins();
+        if (medecinRepository.count() == 0) {
+            log.info("Démarrage de l'initialisation exclusive depuis data_fictif (première fois)...");
+            excelImportService.importFictifExcelAndSyncMedecins();
+        } else {
+            log.info("Données médecins déjà présentes ({} médecins), pas de ré-importation automatique au démarrage.", medecinRepository.count());
+        }
     }
 }

@@ -31,4 +31,13 @@ public class RetourTerrainRequest {
 
     /** Visiteur médical (optionnel, pré-rempli avec l'utilisateur connecté si non spécifié). */
     private String visiteur;
+
+    /** Statut d'exécution : REALISEE, NON_REALISEE, NON_RENSEIGNE (optionnel, défaut REALISEE). */
+    private String statutVisite;
+
+    /** Qualification du retour : FAVORABLE, DEFAVORABLE, NEUTRE, NON_RENSEIGNE (optionnel, défaut NON_RENSEIGNE). */
+    private String qualification;
+
+    /** Visite avec réclamation médecin (optionnel, défaut false). */
+    private Boolean reclamation;
 }

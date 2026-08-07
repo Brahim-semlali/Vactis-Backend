@@ -6,8 +6,11 @@ import com.vactis.dto.activite.KpiMensuelResponse;
 import com.vactis.dto.activite.StatutRepartitionResponse;
 import com.vactis.dto.activite.TopMouvementsResponse;
 import com.vactis.dto.activite.TransitionsStatutsResponse;
+import com.vactis.dto.activite.ActionsVactisResponse;
+import com.vactis.dto.activite.CompteRenduTerrainResponse;
 import com.vactis.service.ActivitePortefeuilleService;
 import com.vactis.service.ActiviteService;
+import com.vactis.service.ActiviteTerrainService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-// Contrôleur REST pour le suivi de l'activité mensuelle (Niveau 1 : KPIs, comparaisons ; Niveau 2 : statuts, flux, top mouvements)
+// Contrôleur REST pour le suivi de l'activité mensuelle (Niveau 1 : KPIs, comparaisons ; Niveau 2 : statuts, flux, top mouvements ; Niveau 3 : exécution terrain)
 @RestController
 @RequestMapping("/api/activite")
 @RequiredArgsConstructor
@@ -26,6 +29,7 @@ public class ActiviteController {
 
     private final ActiviteService activiteService;
     private final ActivitePortefeuilleService activitePortefeuilleService;
+    private final ActiviteTerrainService activiteTerrainService;
 
     // Retourne les KPIs d'activité pour un mois donné (CA, cas, médecins actifs, etc.)
     @GetMapping("/kpis-mensuels")
@@ -85,5 +89,23 @@ public class ActiviteController {
             @RequestParam(name = "limite", defaultValue = "10") int limite
     ) {
         return ResponseEntity.ok(activitePortefeuilleService.getTopMouvements(mois, metrique, limite));
+    }
+
+    // --- Niveau 3 — Exécution terrain ---
+
+    // Lecture réalisation commerciale / actions VACTIS
+    @GetMapping("/terrain/actions")
+    public ResponseEntity<ActionsVactisResponse> getActionsVactis(
+            @RequestParam(name = "mois", required = false) String mois
+    ) {
+        return ResponseEntity.ok(activiteTerrainService.getActionsVactis(mois));
+    }
+
+    // Compte-rendu terrain du mois
+    @GetMapping("/terrain/compte-rendu")
+    public ResponseEntity<CompteRenduTerrainResponse> getCompteRenduTerrain(
+            @RequestParam(name = "mois", required = false) String mois
+    ) {
+        return ResponseEntity.ok(activiteTerrainService.getCompteRenduTerrain(mois));
     }
 }

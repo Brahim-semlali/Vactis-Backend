@@ -37,6 +37,25 @@ public class RetourTerrain {
     @Column(length = 255)
     private String visiteur;
 
+    // --- Niveau 3 : champs d'exécution terrain ---
+
+    /** Statut d'exécution de la visite (REALISEE par défaut pour la migration des données existantes). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statut_visite", nullable = false, length = 20,
+            columnDefinition = "varchar(20) default 'REALISEE'")
+    private StatutVisite statutVisite = StatutVisite.REALISEE;
+
+    /** Qualification du retour terrain (NON_RENSEIGNE par défaut pour la migration). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "qualification", nullable = false, length = 20,
+            columnDefinition = "varchar(20) default 'NON_RENSEIGNE'")
+    private QualificationVisite qualification = QualificationVisite.NON_RENSEIGNE;
+
+    /** Indique si la visite a donné lieu à une réclamation médecin. */
+    @Column(name = "reclamation", nullable = false,
+            columnDefinition = "boolean default false")
+    private Boolean reclamation = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
