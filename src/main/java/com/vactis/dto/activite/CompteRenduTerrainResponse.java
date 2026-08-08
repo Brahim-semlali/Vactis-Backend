@@ -32,6 +32,7 @@ public class CompteRenduTerrainResponse {
     private long favorables;
 
     private List<RepartitionCommercialDetail> repartitionParCommercial;
+    private List<RetourTerrainDetail> retours;
 
     @Data
     @NoArgsConstructor
@@ -43,5 +44,24 @@ public class CompteRenduTerrainResponse {
         private long realisees;
         private long reclamations;
         private long favorables;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class RetourTerrainDetail {
+        private Long id;
+        private Long medecinId;
+        private String codeMedecin;
+        private String nomMedecin;
+        private String specialite;
+        private String visiteur;
+        private java.time.LocalDate dateVisite;
+        private Double note;
+        private String commentaire;
+        private String statutVisite;
+        private String qualification;
+        private Boolean reclamation;
     }
 }

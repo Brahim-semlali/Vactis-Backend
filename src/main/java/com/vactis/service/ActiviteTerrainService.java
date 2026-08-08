@@ -129,6 +129,27 @@ public class ActiviteTerrainService {
                 .sorted(Comparator.comparing(CompteRenduTerrainResponse.RepartitionCommercialDetail::getRenseignees).reversed())
                 .collect(Collectors.toList());
 
+        List<CompteRenduTerrainResponse.RetourTerrainDetail> retoursDetail = retours.stream()
+                .map(r -> CompteRenduTerrainResponse.RetourTerrainDetail.builder()
+                        .id(r.getId())
+                        .medecinId(r.getMedecin() != null ? r.getMedecin().getId() : null)
+                        .codeMedecin(r.getMedecin() != null ? r.getMedecin().getCodeMedecin() : null)
+                        .nomMedecin((r.getNomMedecin() != null && !r.getNomMedecin().isBlank())
+                                ? r.getNomMedecin()
+                                : (r.getMedecin() != null
+                                        ? ((r.getMedecin().getNom() != null ? r.getMedecin().getNom() : "") + " " + (r.getMedecin().getPrenom() != null ? r.getMedecin().getPrenom() : "")).trim()
+                                        : "Non renseigné"))
+                        .specialite(r.getMedecin() != null ? r.getMedecin().getSpecialite() : null)
+                        .visiteur((r.getVisiteur() != null && !r.getVisiteur().isBlank()) ? r.getVisiteur() : "Non renseigné")
+                        .dateVisite(r.getDateVisite())
+                        .note(r.getNote())
+                        .commentaire(r.getCommentaire())
+                        .statutVisite(getStatutSafe(r).name())
+                        .qualification(getQualifSafe(r).name())
+                        .reclamation(Boolean.TRUE.equals(r.getReclamation()))
+                        .build())
+                .collect(Collectors.toList());
+
         return CompteRenduTerrainResponse.builder()
                 .mois(ym.format(YYYY_MM))
                 .visitesRenseignees(renseignees)
@@ -142,6 +163,7 @@ public class ActiviteTerrainService {
                 .statutNonRenseigneCarte(statutNonRenseigne)
                 .favorables(favorables)
                 .repartitionParCommercial(repartition)
+                .retours(retoursDetail)
                 .build();
     }
 
