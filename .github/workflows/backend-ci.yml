@@ -2,9 +2,9 @@ name: Backend CI (Spring Boot)
 
 on:
   push:
-    branches: [ "main", "master", "dev" ]
+    branches: ["main", "master", "dev"]
   pull_request:
-    branches: [ "main", "master", "dev" ]
+    branches: ["main", "master", "dev"]
   workflow_dispatch:
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d vactis_db"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -31,12 +31,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'maven'
+          java-version: "21"
+          distribution: "temurin"
+          cache: "maven"
 
       - name: Make Maven Wrapper Executable
         run: chmod +x mvnw
