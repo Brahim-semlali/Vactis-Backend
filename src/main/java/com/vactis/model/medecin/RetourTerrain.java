@@ -1,5 +1,6 @@
 package com.vactis.model.medecin;
 
+import com.vactis.model.action.Action;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -55,6 +56,25 @@ public class RetourTerrain {
     @Column(name = "reclamation", nullable = false,
             columnDefinition = "boolean default false")
     private Boolean reclamation = false;
+
+    // --- Niveau 4 : lien action VACTIS et type de visite ---
+
+    /**
+     * Lien optionnel vers l'action VACTIS ayant déclenché cette visite.
+     * NULL = visite hors VACTIS (saisie terrain libre).
+     * NON NULL = visite VACTIS (issue d'une action générée).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "action_id", nullable = true)
+    private Action action;
+
+    /**
+     * Type de visite saisi par le commercial (Fidélisation, Rétention, etc.).
+     * NULL pour les retours historiques antérieurs au Niveau 4 → affiché comme AUTRE.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type_visite", length = 30)
+    private TypeVisite typeVisite;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -235,7 +235,10 @@ public class ActivitePortefeuilleService {
         Map<String, Long> mapM   = isCa ? buildCaMap(ymM)   : buildCasMap(ymM);
         Map<String, Long> mapMm1 = isCa ? buildCaMap(ymMm1) : buildCasMap(ymMm1);
 
-        List<Medecin> medecins = medecinRepository.findAll();
+        // Exclure les pseudo-médecins (dossiers non affectés importés avec un libellé de repli)
+        List<Medecin> medecins = medecinRepository.findAll().stream()
+                .filter(m -> !isPseudoMedecin(m))
+                .collect(Collectors.toList());
 
         record MedecinDelta(Medecin medecin, long valM, long valMm1, long delta) {}
 
@@ -271,6 +274,28 @@ public class ActivitePortefeuilleService {
                 .baisses(baisses)
                 .build();
     }
+
+    /**
+     * Détermine si un médecin est un pseudo-médecin (libellé de repli non nominatif importé depuis l'Excel).
+     * Ces entrées correspondent à des dossiers dont la colonne "médecin" dans l'Excel contenait
+     * une valeur non nominative (ex. "INCONNU MÉDECIN", "PRÉCISÉ NON", nom vide).
+     * Règle : on exclut les médecins dont le nom (après nettoyage) est vide, null, ou dans la liste
+     * des libellés de repli connus.
+     */
+    private static final Set<String> NOMS_EXCLUS_TOP = Set.of(
+            "inconnu", "inconnu medecin", "inconnu médecin",
+            "précisé non", "precise non", "non précisé", "non precise",
+            "nr", "n/r", "n.r.", "–", "-", "/"
+    );
+
+    private boolean isPseudoMedecin(Medecin m) {
+        String nom    = m.getNom()    != null ? m.getNom().trim()    : "";
+        String prenom = m.getPrenom() != null ? m.getPrenom().trim() : "";
+        String full   = (prenom + " " + nom).trim().toLowerCase();
+        if (full.isBlank()) return true;
+        return NOMS_EXCLUS_TOP.stream().anyMatch(exclu -> full.contains(exclu));
+    }
+
 
     // Calcule le statut VACTIS d'un médecin à partir du ratio CA M / CA M-1
     private String calculerStatutComplet(
@@ -312,7 +337,8 @@ public class ActivitePortefeuilleService {
     }
 
     // Construit la map {medecinId → statut VACTIS} pour tous les médecins sur le mois ym
-    private Map<Long, String> buildStatutMapForMonth(YearMonth ym, List<Medecin> medecins) {
+    // Méthode publique : réutilisée par ActiviteImpactService (Niveau 4) pour calculer statut avant/après
+    public Map<Long, String> buildStatutMapForMonth(YearMonth ym, List<Medecin> medecins) {
         Map<String, Long> caM   = buildCaMap(ym);
         Map<String, Long> caMm1 = buildCaMap(ym.minusMonths(1));
         Set<Long> actifHisto    = buildHistoriqueActifIds(ym);

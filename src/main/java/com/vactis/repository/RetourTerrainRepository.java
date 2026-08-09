@@ -3,6 +3,8 @@ package com.vactis.repository;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RetourTerrain;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
@@ -23,13 +25,47 @@ public interface RetourTerrainRepository extends JpaRepository<RetourTerrain, Lo
     List<RetourTerrain> findByDateVisiteBetween(LocalDate start, LocalDate end);
 
     // Retourne la liste distincte de toutes les dates de visite enregistrées, triées par date décroissante
-    @org.springframework.data.jpa.repository.Query("""
+    @Query("""
         select distinct r.dateVisite
         from RetourTerrain r
         where r.dateVisite is not null
         order by r.dateVisite desc
     """)
     List<LocalDate> findAllDatesDescending();
+
+    // ── Niveau 4 — Impact des visites terrain ────────────────────────────────
+
+    /**
+     * Retourne toutes les visites d'une plage avec JOIN FETCH sur médecin et action.
+     * Évite les N+1 lors de l'accès à r.action et r.medecin en Niveau 4.
+     */
+    @Query("""
+        select r from RetourTerrain r
+        left join fetch r.action a
+        join fetch r.medecin m
+        where r.dateVisite between :start and :end
+        order by r.dateVisite desc, m.nom, m.prenom
+    """)
+    List<RetourTerrain> findByDateVisiteBetweenWithFetch(
+            @Param("start") LocalDate start,
+            @Param("end") LocalDate end);
+
+    /**
+     * Retourne uniquement les visites VACTIS (action_id IS NOT NULL) sur une plage.
+     * Utilisé pour le tableau détaillé et la classification par commercial (Niveau 4).
+     */
+    @Query("""
+        select r from RetourTerrain r
+        left join fetch r.action a
+        join fetch r.medecin m
+        where r.dateVisite between :start and :end
+          and r.action is not null
+        order by r.dateVisite desc, m.nom, m.prenom
+    """)
+    List<RetourTerrain> findVactisByDateVisiteBetween(
+            @Param("start") LocalDate start,
+            @Param("end") LocalDate end);
 }
+
 
 

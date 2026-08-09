@@ -91,4 +91,16 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
         order by a.lieuOrganisme
     """)
     List<String> findDistinctLieuxOrganismes();
+
+    /**
+     * Compte les actions exclues par la direction (statut = 'exclu').
+     * Utilisé pour calculer le dénominateur du taux de réalisation
+     * (actions générées - exclues direction).
+     */
+    @Query("""
+        select count(a)
+        from Action a
+        where lower(a.statut) = 'exclu'
+    """)
+    Long countActionsExcluesDirection();
 }

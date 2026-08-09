@@ -1,13 +1,17 @@
 package com.vactis.controller;
 
 import com.vactis.dto.activite.ComparaisonResponse;
+import com.vactis.dto.activite.DetailEvolutionResponse;
+import com.vactis.dto.activite.EvolutionParCommercialResponse;
 import com.vactis.dto.activite.FluxAgregesResponse;
 import com.vactis.dto.activite.KpiMensuelResponse;
+import com.vactis.dto.activite.RapportImpactResponse;
 import com.vactis.dto.activite.StatutRepartitionResponse;
 import com.vactis.dto.activite.TopMouvementsResponse;
 import com.vactis.dto.activite.TransitionsStatutsResponse;
 import com.vactis.dto.activite.ActionsVactisResponse;
 import com.vactis.dto.activite.CompteRenduTerrainResponse;
+import com.vactis.service.ActiviteImpactService;
 import com.vactis.service.ActivitePortefeuilleService;
 import com.vactis.service.ActiviteService;
 import com.vactis.service.ActiviteTerrainService;
@@ -21,7 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-// Contrôleur REST pour le suivi de l'activité mensuelle (Niveau 1 : KPIs, comparaisons ; Niveau 2 : statuts, flux, top mouvements ; Niveau 3 : exécution terrain)
+// Contrôleur REST pour le suivi de l'activité mensuelle
+// (Niveau 1 : KPIs, comparaisons ; Niveau 2 : statuts, flux, top mouvements ;
+//  Niveau 3 : exécution terrain ; Niveau 4 : impact des visites terrain)
 @RestController
 @RequestMapping("/api/activite")
 @RequiredArgsConstructor
@@ -30,6 +36,7 @@ public class ActiviteController {
     private final ActiviteService activiteService;
     private final ActivitePortefeuilleService activitePortefeuilleService;
     private final ActiviteTerrainService activiteTerrainService;
+    private final ActiviteImpactService activiteImpactService;
 
     // Retourne les KPIs d'activité pour un mois donné (CA, cas, médecins actifs, etc.)
     @GetMapping("/kpis-mensuels")
@@ -107,5 +114,33 @@ public class ActiviteController {
             @RequestParam(name = "mois", required = false) String mois
     ) {
         return ResponseEntity.ok(activiteTerrainService.getCompteRenduTerrain(mois));
+    }
+
+    // --- Niveau 4 — Impact des visites terrain ---
+
+    // Rapport d'impact : Vue globale + Exécution des actions VACTIS
+    @GetMapping("/impact/rapport")
+    public ResponseEntity<RapportImpactResponse> getRapportImpact(
+            @RequestParam(name = "mois", required = false) String mois
+    ) {
+        return ResponseEntity.ok(activiteImpactService.getRapportImpact(mois));
+    }
+
+    // Graphique empilement par commercial + classification évolution post-visite
+    @GetMapping("/impact/par-commercial")
+    public ResponseEntity<EvolutionParCommercialResponse> getEvolutionParCommercial(
+            @RequestParam(name = "mois", required = false) String mois
+    ) {
+        return ResponseEntity.ok(activiteImpactService.getEvolutionParCommercial(mois));
+    }
+
+    // Tableau détaillé post-visite VACTIS — paginé côté serveur
+    @GetMapping("/impact/detail")
+    public ResponseEntity<DetailEvolutionResponse> getDetailEvolution(
+            @RequestParam(name = "mois", required = false) String mois,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "taille", defaultValue = "20") int taille
+    ) {
+        return ResponseEntity.ok(activiteImpactService.getDetailEvolution(mois, page, taille));
     }
 }
