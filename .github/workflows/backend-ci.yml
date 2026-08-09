@@ -2,9 +2,9 @@ name: Backend CI (Spring Boot)
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main", "master", "dev" ]
   pull_request:
-    branches: ["main"]
+    branches: [ "main", "master", "dev" ]
   workflow_dispatch:
 
 jobs:
@@ -45,7 +45,7 @@ jobs:
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/vactis_db
           SPRING_DATASOURCE_USERNAME: postgres
-          SPRING_DATASOURCE_PASSWORD: postgre
+          SPRING_DATASOURCE_PASSWORD: 1234
           JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
         run: ./mvnw clean verify
 
