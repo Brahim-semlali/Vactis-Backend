@@ -74,7 +74,7 @@ class MedecinControllerTest {
     }
 
     @Test
-    @DisplayName("Devrait retourner un médecin par son ID (GET /api/medecins/{id})")
+    @DisplayName("Devrait retourner un medecin par son ID (GET /api/medecins/{id})")
     void testGetMedecinById_Success() throws Exception {
         // Arrange
         when(medecinService.findById(1L)).thenReturn(mockMedecin);
@@ -100,7 +100,7 @@ class MedecinControllerTest {
     }
 
     @Test
-    @DisplayName("Devrait mettre à jour la note_input d'un médecin (PATCH /api/medecins/{id}/note-input)")
+    @DisplayName("Devrait mettre a jour la note_input d'un medecin (PATCH /api/medecins/{id}/note-input)")
     void testUpdateNoteInput_Success() throws Exception {
         // Arrange
         mockMedecin.setNoteInput(4.5);
