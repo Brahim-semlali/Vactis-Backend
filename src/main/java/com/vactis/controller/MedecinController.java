@@ -35,7 +35,8 @@ public class MedecinController {
             @RequestParam(required = false) String segment,
             @RequestParam(required = false) String specialite,
             @RequestParam(required = false) RisqueUrgence risqueUrgence,
-            @RequestParam(required = false) String organisme
+            @RequestParam(required = false) String organisme,
+            @RequestParam(required = false) Boolean sansNoteInput
     ){
         return medecinService.getMedecinPage(
                 search,
@@ -44,7 +45,8 @@ public class MedecinController {
                 segment,
                 specialite,
                 risqueUrgence,
-                organisme
+                organisme,
+                sansNoteInput
         );
     }
 

@@ -1,16 +1,16 @@
 package com.vactis.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vactis.dto.common.ErrorResponse;
 
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
-import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 
 final class SecurityJsonWriter {
 
-    private static final JsonMapper MAPPER = JsonMapper.builder().build();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private SecurityJsonWriter() {
     }

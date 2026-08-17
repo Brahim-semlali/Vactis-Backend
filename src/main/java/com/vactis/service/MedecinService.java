@@ -104,7 +104,8 @@ public class MedecinService {
             String segment,
             String specialite,
             RisqueUrgence risqueUrgence,
-            String organisme
+            String organisme,
+            Boolean sansNoteInput
     ){
         return medecinRepository.searchMedecins(
                 normalize(search),
@@ -113,7 +114,8 @@ public class MedecinService {
                 normalize(segment),
                 normalize(specialite),
                 risqueUrgence,
-                normalize(organisme)
+                normalize(organisme),
+                sansNoteInput
         );
     }
 
@@ -144,6 +146,7 @@ public class MedecinService {
         kpis.setOnboarding(medecinRepository.countAllByStatutPilotage(StatutPilotage.ONBOARDING));
         kpis.setSilenceCritique(medecinRepository.countAllByStatutPilotage(StatutPilotage.SILENCE_CRITIQUE));
         kpis.setActionsEnCours(actionService.countPlanifiees());
+        kpis.setSansNoteInput(medecinRepository.countByNoteInputIsNull());
         return kpis;
     }
 
@@ -178,7 +181,8 @@ public class MedecinService {
             String segment,
             String specialite,
             RisqueUrgence risqueUrgence,
-            String organisme
+            String organisme,
+            Boolean sansNoteInput
     ){
         recalculerStatutsEtSegmentsDynamiques();
 
@@ -189,7 +193,8 @@ public class MedecinService {
                 segment,
                 specialite,
                 risqueUrgence,
-                organisme
+                organisme,
+                sansNoteInput
         );
 
         MedecinMetaResponse meta = new MedecinMetaResponse();

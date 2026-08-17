@@ -49,6 +49,14 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
     // Retourne les médecins par statut de pilotage commercial
     List<Medecin> findAllByStatutPilotage(StatutPilotage statutPilotage);
 
+    // Compte le nombre de médecins n'ayant pas encore de note potentielle
+    @Query("""
+        select count(m)
+        from Medecin m
+        where m.noteInput is null
+    """)
+    Long countByNoteInputIsNull();
+
     // Recherche multi-critères sur les médecins (nom, spécialité, organisme, etc.)
     @Query("""
         select m
@@ -65,6 +73,7 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
           and (:specialite is null or :specialite = '' or m.specialite = :specialite)
           and (:risqueUrgence is null or m.risqueUrgence = :risqueUrgence)
           and (:organisme is null or :organisme = '' or m.organisme = :organisme)
+          and (:sansNoteInput is null or (:sansNoteInput = true and m.noteInput is null) or (:sansNoteInput = false and m.noteInput is not null))
         order by m.nom, m.prenom
     """)
     List<Medecin> searchMedecins(
@@ -74,7 +83,8 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
             @Param("segment") String segment,
             @Param("specialite") String specialite,
             @Param("risqueUrgence") RisqueUrgence risqueUrgence,
-            @Param("organisme") String organisme
+            @Param("organisme") String organisme,
+            @Param("sansNoteInput") Boolean sansNoteInput
     );
 
     // Retourne la liste distincte des spécialités médicales enregistrées
