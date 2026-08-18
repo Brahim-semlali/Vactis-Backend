@@ -9,6 +9,7 @@ import com.vactis.model.medecin.RisqueUrgence;
 import com.vactis.model.medecin.StatutMedecin;
 import com.vactis.model.medecin.StatutPilotage;
 import com.vactis.model.Controle.TypeControle;
+import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -16,7 +17,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 // Service métier pour la gestion du portefeuille médecins, la segmentation et le calcul des KPIs
 @Service
@@ -27,6 +32,7 @@ public class MedecinService {
     private final ExcelImportService excelImportService;
     private final ControleService controleService;
     private final SegmentationService segmentationService;
+    private final ExtractionDonneesRepository extractionDonneesRepository;
 
     // Déclenche la synchronisation des médecins depuis le fichier Excel fictif
     public void syncMedecinsFromDataFictif() {
@@ -142,25 +148,60 @@ public class MedecinService {
                         ? 0L
                         : medecinRepository.countBySegmentIn(prioritySegments)
         );
-        kpis.setSurveillance(medecinRepository.countAllByStatutPilotage(StatutPilotage.SURVEILLANCE));
-        kpis.setOnboarding(medecinRepository.countAllByStatutPilotage(StatutPilotage.ONBOARDING));
-        kpis.setSilenceCritique(medecinRepository.countAllByStatutPilotage(StatutPilotage.SILENCE_CRITIQUE));
+        kpis.setSurveillance(medecinRepository.countByStatutIgnoreCase("SURVEILLANCE"));
+        kpis.setOnboarding(medecinRepository.countByStatutIgnoreCase("ONBOARDING"));
+        kpis.setSilenceCritique(medecinRepository.countByStatutIgnoreCase("SILENCE_CRITIQUE"));
         kpis.setActionsEnCours(actionService.countPlanifiees());
         kpis.setSansNoteInput(medecinRepository.countByNoteInputIsNull());
         return kpis;
     }
 
-    // Recalcule dynamiquement les statuts et segments (A/B/C/D) de tous les médecins
+    // Recalcule dynamiquement les statuts (selon les règles Controle) et segments (A/B/C/D) de tous les médecins
     public void recalculerStatutsEtSegmentsDynamiques() {
         List<Medecin> medecins = medecinRepository.findAll();
+        if (medecins.isEmpty()) return;
+
+        List<LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
+        YearMonth ymM = dates.isEmpty() ? YearMonth.now() : YearMonth.from(dates.get(0));
+        YearMonth ymMm1 = ymM.minusMonths(1);
+
+        Map<String, Long> caM = buildCaMapForMonth(ymM);
+        Map<String, Long> caMm1 = buildCaMapForMonth(ymMm1);
+
         boolean modifie = false;
 
         for (Medecin m : medecins) {
-            Long ca = m.getCaMois() != null ? m.getCaMois().longValue() : 0L;
+            String key = String.valueOf(m.getId());
+            long valM = caM.getOrDefault(key, 0L);
+            long valMm1 = caMm1.getOrDefault(key, 0L);
 
-            String statutDynamique = controleService.determinerEtat(TypeControle.STATUT, ca);
-            if (statutDynamique != null && !statutDynamique.equals(m.getStatut())) {
-                m.setStatut(statutDynamique);
+            String statutDynamique = null;
+
+            if (valM == 0 && valMm1 == 0) {
+                statutDynamique = m.getStatutPilotage() != null ? m.getStatutPilotage().name() : "EXCLU";
+            } else if (valMm1 == 0 && valM > 0) {
+                statutDynamique = "ONBOARDING";
+            } else if (valMm1 > 0) {
+                double variation = ((double) (valM - valMm1) / (double) valMm1) * 100.0;
+                long varRounded = Math.round(variation);
+
+                statutDynamique = controleService.determinerEtat(TypeControle.STATUT, varRounded);
+                if (statutDynamique == null) {
+                    if (varRounded > 20) statutDynamique = "PROGRESSION";
+                    else if (varRounded >= -10) statutDynamique = "ACTIF_STABLE";
+                    else if (varRounded >= -40) statutDynamique = "SURVEILLANCE";
+                    else if (varRounded >= -70) statutDynamique = "RETENTION";
+                    else statutDynamique = "SILENCE_CRITIQUE";
+                }
+            } else {
+                statutDynamique = "ACTIF_STABLE";
+            }
+
+            if (statutDynamique != null && !statutDynamique.equalsIgnoreCase(m.getStatut())) {
+                m.setStatut(statutDynamique.toUpperCase());
+                try {
+                    m.setStatutPilotage(StatutPilotage.valueOf(statutDynamique.toUpperCase()));
+                } catch (Exception ignored) {}
                 modifie = true;
             }
         }
@@ -171,6 +212,17 @@ public class MedecinService {
 
         // Recalcul du score de valeur et des segments A/B/C/D selon la formule Anapath
         segmentationService.recalculerSegmentationPortefeuille();
+    }
+
+    private Map<String, Long> buildCaMapForMonth(YearMonth ym) {
+        List<Object[]> rows = extractionDonneesRepository.sumCaByMedecinAndDateRange(ym.atDay(1), ym.atEndOfMonth());
+        Map<String, Long> map = new HashMap<>();
+        for (Object[] row : rows) {
+            if (row[0] != null && row[1] != null) {
+                map.put(String.valueOf((Long) row[0]), ((Number) row[1]).longValue());
+            }
+        }
+        return map;
     }
 
     // Construit la réponse complète de la page médecins (liste filtrée, KPIs, méta, filtres)

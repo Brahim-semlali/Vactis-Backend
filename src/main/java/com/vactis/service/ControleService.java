@@ -54,17 +54,28 @@ public class ControleService {
         controleRepository.deleteById(idControle);
     }
 
-    // Détermine l'état dynamique correspondant à un montant de CA (ex: ACTIF, PERTE)
+    // Détermine l'état dynamique correspondant à un pourcentage de variation (ou palier de contrôle)
     public String determinerEtat(TypeControle type, Long montant) {
         List<Controle> regles = controleRepository.findByTypeAndActifTrue(type);
 
-        for (Controle regle : regles) {
-            boolean montantSuperieurOuEgalAuMin = montant.compareTo(regle.getMinCA()) >= 0;
-            boolean montantInferieurOuEgalAuMax = montant.compareTo(regle.getMaxCA()) <= 0;
+        if (montant != null) {
+            for (Controle regle : regles) {
+                boolean montantSuperieurOuEgalAuMin = montant.compareTo(regle.getMinCA()) >= 0;
+                boolean montantInferieurOuEgalAuMax = montant.compareTo(regle.getMaxCA()) <= 0;
 
-            if (montantSuperieurOuEgalAuMin && montantInferieurOuEgalAuMax) {
-                return regle.getEtat();
+                if (montantSuperieurOuEgalAuMin && montantInferieurOuEgalAuMax) {
+                    return regle.getEtat();
+                }
             }
+        }
+
+        // Fallback dynamique selon les formules métier VACTIS si aucune règle personnalisée ne s'applique
+        if (type == TypeControle.STATUT && montant != null) {
+            if (montant > 20) return "PROGRESSION";
+            if (montant >= -10) return "ACTIF_STABLE";
+            if (montant >= -40) return "SURVEILLANCE";
+            if (montant >= -70) return "RETENTION";
+            return "SILENCE_CRITIQUE";
         }
 
         return null;
@@ -84,16 +95,34 @@ public class ControleService {
             }
         }
 
+        // Fallback dynamique selon les seuils VACTIS (A >= 75, B >= 60, C >= 45, D < 45)
+        if (type == TypeControle.SEGEMENTS) {
+            if (score >= 75) return "A";
+            if (score >= 60) return "B";
+            if (score >= 45) return "C";
+            return "D";
+        }
+
         return null;
     }
 
-    // Retourne les libellés d'états actifs distincts pour un type de règle
+    // Retourne les libellés d'états actifs distincts pour un type de règle (avec fallback dynamique)
     public List<String> getEtatsActifs(TypeControle type) {
-        return controleRepository.findByTypeAndActifTrue(type).stream()
+        List<String> etats = controleRepository.findByTypeAndActifTrue(type).stream()
                 .map(Controle::getEtat)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
+
+        if (!etats.isEmpty()) {
+            return etats;
+        }
+
+        if (type == TypeControle.STATUT) {
+            return List.of("PROGRESSION", "ACTIF_STABLE", "SURVEILLANCE", "RETENTION", "SILENCE_CRITIQUE");
+        } else {
+            return List.of("A", "B", "C", "D");
+        }
     }
 
     // Valide la cohérence des champs d'une règle de contrôle avant enregistrement

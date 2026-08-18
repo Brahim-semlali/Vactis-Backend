@@ -11,17 +11,29 @@ import com.vactis.model.medecin.StatutPilotage;
 import com.vactis.repository.ActionRepository;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.vactis.model.Controle.TypeControle;
 import java.util.List;
 
 // Service métier pour la gestion, la recherche et le calcul des indicateurs des actions de pilotage
 @Service
-@RequiredArgsConstructor
 public class ActionService {
     private final ActionRepository actionRepository;
     private final ControleService controleService;
+    private final MedecinService medecinService;
+
+    public ActionService(
+            ActionRepository actionRepository,
+            ControleService controleService,
+            @Lazy MedecinService medecinService
+    ) {
+        this.actionRepository = actionRepository;
+        this.controleService = controleService;
+        this.medecinService = medecinService;
+    }
 
     // Retourne toutes les actions en base
     public List<Action> findAll() {
@@ -36,7 +48,7 @@ public class ActionService {
     // Recherche les actions selon plusieurs critères de filtrage
     public List<Action> searchActions(
             String search,
-            StatutPilotage statut,
+            String statut,
             String segment,
             String action,
             UrgenceAction urgence,
@@ -47,7 +59,7 @@ public class ActionService {
     ) {
         return actionRepository.searchActions(
                 normalize(search),
-                statut != null ? statut.name() : null,
+                normalize(statut),
                 normalize(segment),
                 normalize(action),
                 urgence,
@@ -88,7 +100,7 @@ public class ActionService {
     // Construit la réponse complète de la page des actions (liste, KPIs, méta, filtres)
     public ActionPageResponse getActionPage(
             String search,
-            StatutPilotage statut,
+            String statut,
             String segment,
             String action,
             UrgenceAction urgence,
@@ -97,6 +109,9 @@ public class ActionService {
             String commercial,
             String lieuOrganisme
     ) {
+        medecinService.recalculerStatutsEtSegmentsDynamiques();
+        syncActionsWithMedecins();
+
         List<Action> items = searchActions(
                 search,
                 statut,
@@ -119,6 +134,43 @@ public class ActionService {
         response.setMeta(meta);
         response.setFilters(getFilterOptions());
         return response;
+    }
+
+    @Transactional
+    public void syncActionsWithMedecins() {
+        List<Action> actions = actionRepository.findAll();
+        boolean modifie = false;
+        for (Action a : actions) {
+            if (a.getMedecin() != null) {
+                String statutMed = a.getMedecin().getStatut();
+                if (statutMed != null && !statutMed.equalsIgnoreCase(a.getStatut())) {
+                    String upperStatut = statutMed.toUpperCase();
+                    a.setStatut(upperStatut);
+                    
+                    if ("SURVEILLANCE".equals(upperStatut) || "SILENCE_CRITIQUE".equals(upperStatut) || "RETENTION".equals(upperStatut)) {
+                        a.setActionRecommandee("visite urgence silence");
+                        a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
+                        a.setUrgenceSilence(true);
+                    } else if ("PROGRESSION".equals(upperStatut)) {
+                        a.setActionRecommandee("visite suivi progression");
+                        a.setUrgence(UrgenceAction.FAIBLE);
+                        a.setUrgenceSilence(false);
+                    } else if ("ONBOARDING".equals(upperStatut)) {
+                        a.setActionRecommandee("visite onboarding");
+                        a.setUrgence(UrgenceAction.ELEVE);
+                        a.setUrgenceSilence(false);
+                    }
+                    modifie = true;
+                }
+                if (a.getMedecin().getSegment() != null && !a.getMedecin().getSegment().equalsIgnoreCase(a.getSegment())) {
+                    a.setSegment(a.getMedecin().getSegment().toUpperCase());
+                    modifie = true;
+                }
+            }
+        }
+        if (modifie) {
+            actionRepository.saveAll(actions);
+        }
     }
 
     // Nettoie et normalise une chaîne (trim + null si vide)

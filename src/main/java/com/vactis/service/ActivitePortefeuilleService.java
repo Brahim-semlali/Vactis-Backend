@@ -297,7 +297,7 @@ public class ActivitePortefeuilleService {
     }
 
 
-    // Calcule le statut VACTIS d'un médecin à partir du ratio CA M / CA M-1
+    // Calcule le statut VACTIS d'un médecin à partir de la variation CA M / CA M-1
     private String calculerStatutComplet(
             Medecin m,
             Map<String, Long> caM,
@@ -315,10 +315,10 @@ public class ActivitePortefeuilleService {
 
         double ratio = (double) caCurr / (double) caPrev;
         if (ratio < 0.30) return "silence_critique";
-        if (ratio < 0.80) return "retention";
-        if (ratio < 0.95) return "surveillance";
-        if (ratio > 1.10) return "progression";
-        return "actif_stable";
+        if (ratio < 0.60) return "retention";     // variation < -40%
+        if (ratio < 0.90) return "surveillance";   // variation entre -40% et -10% (ratio < 0.90)
+        if (ratio > 1.20) return "progression";    // variation > +20% (ratio > 1.20)
+        return "actif_stable";                     // variation entre -10% et +20% (0.90 <= ratio <= 1.20)
     }
 
     // Construit un MedecinStatutItem à partir d'un médecin et de ses valeurs M

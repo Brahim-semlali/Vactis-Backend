@@ -43,6 +43,9 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
     // Retourne les médecins d'un segment spécifique
     List<Medecin> findBySegment(String segment);
 
+    // Compte les médecins par statut (insensible à la casse)
+    Long countByStatutIgnoreCase(String statut);
+
     // Compte les médecins par statut de pilotage commercial
     Long countAllByStatutPilotage(StatutPilotage statutPilotage);
 
@@ -68,7 +71,7 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
                lower(m.organisme) like lower(concat('%', :search, '%')) or
                lower(m.ville) like lower(concat('%', :search, '%')))
           and (:statutPilotage is null or m.statutPilotage = :statutPilotage)
-          and (:statut is null or :statut = '' or m.statut = :statut)
+          and (:statut is null or :statut = '' or lower(m.statut) = lower(:statut))
           and (:segment is null or :segment = '' or m.segment = :segment)
           and (:specialite is null or :specialite = '' or m.specialite = :specialite)
           and (:risqueUrgence is null or m.risqueUrgence = :risqueUrgence)

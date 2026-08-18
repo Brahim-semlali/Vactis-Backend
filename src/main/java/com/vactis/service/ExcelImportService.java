@@ -210,10 +210,12 @@ public class ExcelImportService {
 
         for (Medecin m : medecins) {
             String commercial = commerciaux[idx++ % commerciaux.length];
-            if (m.getStatutPilotage() == StatutPilotage.SURVEILLANCE) {
+            String statutMed = (m.getStatut() != null ? m.getStatut() : (m.getStatutPilotage() != null ? m.getStatutPilotage().name() : "NOUVEAU")).toUpperCase();
+
+            if ("SURVEILLANCE".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.SURVEILLANCE) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.SURVEILLANCE.name());
+                a.setStatut(statutMed);
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite urgence silence");
                 a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
@@ -226,10 +228,10 @@ public class ExcelImportService {
                 a.setCycleMensuel("2026-07");
                 a.setCommentaire("Relance prioritaire sur données fictives.");
                 actions.add(a);
-            } else if (m.getStatutPilotage() == StatutPilotage.PROGRESSION) {
+            } else if ("PROGRESSION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.PROGRESSION) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.PROGRESSION.name());
+                a.setStatut(statutMed);
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite suivi progression");
                 a.setUrgence(UrgenceAction.FAIBLE);
@@ -242,10 +244,10 @@ public class ExcelImportService {
                 a.setCycleMensuel("2026-07");
                 a.setCommentaire("Visite de suivi progression effectuée.");
                 actions.add(a);
-            } else if (m.getStatutPilotage() == StatutPilotage.ONBOARDING) {
+            } else if ("ONBOARDING".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.ONBOARDING) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.ONBOARDING.name());
+                a.setStatut(statutMed);
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite onboarding");
                 a.setUrgence(UrgenceAction.ELEVE);
@@ -258,10 +260,10 @@ public class ExcelImportService {
                 a.setCycleMensuel("2026-07");
                 a.setCommentaire("Première visite d onboarding.");
                 actions.add(a);
-            } else if (m.getStatutPilotage() == StatutPilotage.SILENCE_CRITIQUE) {
+            } else if ("SILENCE_CRITIQUE".equals(statutMed) || "RETENTION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.SILENCE_CRITIQUE) {
                 Action a = new Action();
                 a.setMedecin(m);
-                a.setStatut(StatutPilotage.SILENCE_CRITIQUE.name());
+                a.setStatut(statutMed);
                 a.setSegment(m.getSegment());
                 a.setActionRecommandee("visite urgence silence");
                 a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);

@@ -25,7 +25,7 @@ public class ActionController {
     @GetMapping
     public ActionPageResponse getActions(
             @RequestParam(required = false) String search,
-            @RequestParam(required = false) StatutPilotage statut,
+            @RequestParam(required = false) String statut,
             @RequestParam(required = false) String segment,
             @RequestParam(required = false) String action,
             @RequestParam(required = false) UrgenceAction urgence,

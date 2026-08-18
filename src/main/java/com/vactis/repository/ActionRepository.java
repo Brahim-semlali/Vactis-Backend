@@ -43,8 +43,8 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
                lower(a.actionRecommandee) like lower(concat('%', :search, '%')) or
                lower(a.commercial) like lower(concat('%', :search, '%')) or
                lower(a.lieuOrganisme) like lower(concat('%', :search, '%')))
-          and (:statut is null or :statut = '' or a.statut = :statut)
-          and (:segment is null or :segment = '' or a.segment = :segment)
+          and (:statut is null or :statut = '' or lower(a.statut) = lower(:statut) or lower(m.statut) = lower(:statut))
+          and (:segment is null or :segment = '' or lower(a.segment) = lower(:segment) or lower(m.segment) = lower(:segment))
           and (:action is null or :action = '' or a.actionRecommandee = :action)
           and (:urgence is null or a.urgence = :urgence)
           and (:etatAction is null or a.etatAction = :etatAction)
