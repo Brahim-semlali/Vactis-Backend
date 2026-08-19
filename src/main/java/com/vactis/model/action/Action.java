@@ -76,6 +76,27 @@ public class Action {
     @Column(columnDefinition = "TEXT")
     private String commentaire;
 
+    @Column(name = "reserved_by", length = 255)
+    private String reservedBy;
+
+    @Column(name = "reserved_at")
+    private LocalDateTime reservedAt;
+
+    @Column(name = "is_reserved")
+    private Boolean isReserved = false;
+
+    @Column(name = "motif_non_realisation", columnDefinition = "TEXT")
+    private String motifNonRealisation;
+
+    @Column(name = "qualification", length = 50)
+    private String qualification;
+
+    @Column(name = "prochaine_action", length = 255)
+    private String prochaineAction;
+
+    @Column(name = "date_prochaine_action")
+    private LocalDate dateProchaineAction;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

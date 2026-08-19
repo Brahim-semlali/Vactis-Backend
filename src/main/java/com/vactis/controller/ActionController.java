@@ -14,6 +14,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.vactis.dto.action.SaisieRetourTerrainRequest;
+import com.vactis.dto.action.SaisieVisiteLibreRequest;
+import com.vactis.dto.action.VisiteLibreResponse;
+import com.vactis.dto.medecin.FicheContextuelleResponse;
+import com.vactis.model.medecin.RetourTerrain;
+import java.util.List;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.*;
+
 // Contrôleur REST exposant les endpoints de gestion des actions de pilotage commercial
 @RestController
 @RequiredArgsConstructor
@@ -51,5 +61,45 @@ public class ActionController {
     @GetMapping("/{id}")
     public Action getActionById(@PathVariable Long id) {
         return actionService.findById(id);
+    }
+
+    // Permet à un commercial de réserver une action VACTIS
+    @PostMapping("/{id}/reserver")
+    public Action reserverAction(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
+        String username = userDetails != null ? userDetails.getUsername() : "Commercial";
+        return actionService.reserverAction(id, username);
+    }
+
+    // Valide et enregistre le retour terrain direct d'une action VACTIS
+    @PostMapping("/{id}/retour-terrain")
+    public Action soumettreRetourTerrain(
+            @PathVariable Long id,
+            @RequestBody SaisieRetourTerrainRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        String username = userDetails != null ? userDetails.getUsername() : "Commercial";
+        return actionService.soumettreRetourTerrain(id, request, username);
+    }
+
+    // Enregistre une visite commerciale libre hors VACTIS
+    @PostMapping("/visite-libre")
+    public RetourTerrain creerVisiteLibre(
+            @RequestBody SaisieVisiteLibreRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        String username = userDetails != null ? userDetails.getUsername() : "Commercial";
+        return actionService.creerVisiteLibre(request, username);
+    }
+
+    // Récupère la liste de toutes les visites commerciales libres (hors VACTIS)
+    @GetMapping("/visite-libre")
+    public List<VisiteLibreResponse> getVisitesLibres() {
+        return actionService.getVisitesLibres();
+    }
+
+    // Récupère les données de la fiche contextuelle d'un médecin
+    @GetMapping("/medecins/{medecinId}/fiche-contextuelle")
+    public FicheContextuelleResponse getFicheContextuelle(@PathVariable Long medecinId) {
+        return actionService.getFicheContextuelle(medecinId);
     }
 }

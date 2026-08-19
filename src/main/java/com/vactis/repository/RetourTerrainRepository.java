@@ -21,6 +21,9 @@ public interface RetourTerrainRepository extends JpaRepository<RetourTerrain, Lo
     // Retourne toutes les visites d'un médecin, de la plus récente à la plus ancienne
     List<RetourTerrain> findByMedecinOrderByDateVisiteDescCreatedAtDesc(Medecin medecin);
 
+    // Retourne toutes les visites commerciales libres (hors VACTIS, action = null)
+    List<RetourTerrain> findByActionIsNullOrderByDateVisiteDescCreatedAtDesc();
+
     // Retourne toutes les visites dont la date tombe dans une plage (inclusive)
     List<RetourTerrain> findByDateVisiteBetween(LocalDate start, LocalDate end);
 
