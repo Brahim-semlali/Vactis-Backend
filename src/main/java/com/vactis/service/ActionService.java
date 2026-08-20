@@ -28,6 +28,7 @@ import com.vactis.model.medecin.RetourTerrain;
 import com.vactis.model.medecin.StatutVisite;
 import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.RetourTerrainRepository;
+import com.vactis.repository.ExtractionDonneesRepository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +42,7 @@ public class ActionService {
     private final RetourTerrainRepository retourTerrainRepository;
     private final MedecinRepository medecinRepository;
     private final SegmentationService segmentationService;
+    private final ExtractionDonneesRepository extractionDonneesRepository;
 
     public ActionService(
             ActionRepository actionRepository,
@@ -48,7 +50,8 @@ public class ActionService {
             @Lazy MedecinService medecinService,
             RetourTerrainRepository retourTerrainRepository,
             MedecinRepository medecinRepository,
-            SegmentationService segmentationService
+            SegmentationService segmentationService,
+            ExtractionDonneesRepository extractionDonneesRepository
     ) {
         this.actionRepository = actionRepository;
         this.controleService = controleService;
@@ -56,6 +59,7 @@ public class ActionService {
         this.retourTerrainRepository = retourTerrainRepository;
         this.medecinRepository = medecinRepository;
         this.segmentationService = segmentationService;
+        this.extractionDonneesRepository = extractionDonneesRepository;
     }
 
     // Retourne toutes les actions en base
@@ -165,28 +169,57 @@ public class ActionService {
         boolean modifie = false;
         for (Action a : actions) {
             if (a.getMedecin() != null) {
-                String statutMed = a.getMedecin().getStatut();
-                if (statutMed != null && !statutMed.equalsIgnoreCase(a.getStatut())) {
-                    String upperStatut = statutMed.toUpperCase();
-                    a.setStatut(upperStatut);
-                    
-                    if ("SURVEILLANCE".equals(upperStatut) || "SILENCE_CRITIQUE".equals(upperStatut) || "RETENTION".equals(upperStatut)) {
+                Medecin m = a.getMedecin();
+                String statutMed = m.getStatut() != null ? m.getStatut().toUpperCase() : "ACTIF_STABLE";
+                
+                // Synchroniser systématiquement le statut et le segment
+                if (!statutMed.equalsIgnoreCase(a.getStatut())) {
+                    a.setStatut(statutMed);
+                    modifie = true;
+                }
+                if (m.getSegment() != null && !m.getSegment().equalsIgnoreCase(a.getSegment())) {
+                    a.setSegment(m.getSegment().toUpperCase());
+                    modifie = true;
+                }
+
+                // Ajuster l'action recommandée et l'urgence pour correspondre au statut du médecin
+                if ("SURVEILLANCE".equals(statutMed) || "SILENCE_CRITIQUE".equals(statutMed) || "RETENTION".equals(statutMed)) {
+                    if (!"visite urgence silence".equals(a.getActionRecommandee())) {
                         a.setActionRecommandee("visite urgence silence");
                         a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
                         a.setUrgenceSilence(true);
-                    } else if ("PROGRESSION".equals(upperStatut)) {
+                        a.setCommentaire("Relance prioritaire suite à une baisse d'activité.");
+                        modifie = true;
+                    }
+                } else if ("PROGRESSION".equals(statutMed)) {
+                    if (!"visite suivi progression".equals(a.getActionRecommandee())) {
                         a.setActionRecommandee("visite suivi progression");
                         a.setUrgence(UrgenceAction.FAIBLE);
                         a.setUrgenceSilence(false);
-                    } else if ("ONBOARDING".equals(upperStatut)) {
+                        a.setCommentaire("Visite de suivi progression effectuée.");
+                        modifie = true;
+                    }
+                } else if ("ONBOARDING".equals(statutMed)) {
+                    if (!"visite onboarding".equals(a.getActionRecommandee())) {
                         a.setActionRecommandee("visite onboarding");
                         a.setUrgence(UrgenceAction.ELEVE);
                         a.setUrgenceSilence(false);
+                        a.setCommentaire("Première visite d'accompagnement.");
+                        modifie = true;
                     }
-                    modifie = true;
+                } else { // ACTIF_STABLE ou autre
+                    if (!"visite suivi régulier".equals(a.getActionRecommandee())) {
+                        a.setActionRecommandee("visite suivi régulier");
+                        a.setUrgence(UrgenceAction.FAIBLE);
+                        a.setUrgenceSilence(false);
+                        a.setCommentaire("Visite de suivi commercial régulier et fidélisation.");
+                        modifie = true;
+                    }
                 }
-                if (a.getMedecin().getSegment() != null && !a.getMedecin().getSegment().equalsIgnoreCase(a.getSegment())) {
-                    a.setSegment(a.getMedecin().getSegment().toUpperCase());
+
+                // Ajuster la date de visite si elle est dans le passé pour les actions PLANIFIEE
+                if (a.getEtatAction() == EtatAction.PLANIFIEE && (a.getDateVisite() == null || a.getDateVisite().isBefore(LocalDate.now()))) {
+                    a.setDateVisite(LocalDate.now().plusDays(5));
                     modifie = true;
                 }
             }
@@ -297,7 +330,8 @@ public class ActionService {
         RetourTerrain rt = new RetourTerrain();
         rt.setMedecin(medecin);
         rt.setAction(null);
-        rt.setDateVisite(request.getDateVisite() != null ? request.getDateVisite() : LocalDate.now());
+        LocalDate dateVisite = request.getDateVisite() != null ? request.getDateVisite() : LocalDate.now();
+        rt.setDateVisite(dateVisite);
         rt.setStatutVisite(Boolean.FALSE.equals(request.getActionRealisee()) ? StatutVisite.NON_REALISEE : StatutVisite.REALISEE);
         rt.setCommentaire(request.getCommentaire());
         rt.setVisiteur(username != null ? username : "Commercial");
@@ -310,24 +344,77 @@ public class ActionService {
         if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
             rt.setReclamation(true);
         }
+
         return retourTerrainRepository.save(rt);
     }
 
     // Génère les données de la fiche contextuelle du médecin
+    @Transactional
     public FicheContextuelleResponse getFicheContextuelle(Long medecinId) {
         Medecin m = medecinRepository.findById(medecinId)
                 .orElseThrow(() -> new IllegalArgumentException("Médecin introuvable"));
 
         List<RetourTerrain> historique = retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(m);
 
+        // Recherche de la date d'envoi du dernier dossier médical (patient au labo)
+        LocalDate lastDossierDate = extractionDonneesRepository.findMaxDateReceptionByMedecinId(m.getId());
+        if (lastDossierDate == null) {
+            lastDossierDate = m.getDateDerniereActivite();
+        }
+
+        // Calcul dynamique des jours sans activité patient (envoi de dossiers au labo)
+        int joursSansActivite = 0;
+        if (lastDossierDate != null) {
+            long diff = java.time.temporal.ChronoUnit.DAYS.between(lastDossierDate, LocalDate.now());
+            joursSansActivite = diff > 0 ? (int) diff : 0;
+        } else if (m.getDatePremiereCollaboration() != null) {
+            long diff = java.time.temporal.ChronoUnit.DAYS.between(m.getDatePremiereCollaboration(), LocalDate.now());
+            joursSansActivite = diff > 0 ? (int) diff : 0;
+        }
+
+        // Fréquence attendue basée sur le segment du médecin
+        int frequenceJours = calculateFrequenceJours(m.getSegment());
+
+        // Détermination du statut de silence radio
+        String silenceRadioStatus;
+        if (joursSansActivite > frequenceJours || (m.getStatut() != null && m.getStatut().toUpperCase().contains("SILENCE"))) {
+            silenceRadioStatus = "SILENCE CRITIQUE";
+        } else if (joursSansActivite > Math.round(frequenceJours * 0.7)) {
+            silenceRadioStatus = "ALERTE SILENCE";
+        } else {
+            silenceRadioStatus = "SUIVI REGULIER";
+        }
+
+        String statutUpper = m.getStatut() != null ? m.getStatut().toUpperCase() : "ACTIF_STABLE";
+        String explanationText = switch (statutUpper) {
+            case "PROGRESSION" -> "Statut calculé d'après une hausse significative de CA (> +20%) : PROGRESSION";
+            case "ACTIF_STABLE" -> "Statut calculé d'après la stabilité du CA (-10% à +20%) : ACTIF_STABLE";
+            case "SURVEILLANCE" -> "Statut calculé d'après une baisse modérée du CA (-10% à -40%) : SURVEILLANCE";
+            case "RETENTION" -> "Statut calculé d'après une baisse sévère du CA (-40% à -70%) : RETENTION";
+            case "SILENCE_CRITIQUE" -> "Statut calculé d'après une chute critique de CA ou un silence radio prolongé : SILENCE_CRITIQUE";
+            case "ONBOARDING" -> "Médecin nouvellement intégré au portefeuille : ONBOARDING";
+            default -> "Statut calculé d'après la variation de CA : " + m.getStatut();
+        };
+
         FicheContextuelleResponse resp = new FicheContextuelleResponse();
         resp.setMedecin(m);
         resp.setHistoriqueVisites(historique);
-        resp.setStatutExplanation(m.getStatut() != null ? "Statut calculé d'après la variation de CA : " + m.getStatut() : "Statut actif stable");
-        resp.setSilenceRadioStatus(m.getStatut() != null && m.getStatut().contains("SILENCE") ? "SILENCE CRITIQUE" : "SUIVI REGULIER");
-        resp.setJoursSansActivite(44);
-        resp.setFrequenceJours(10);
+        resp.setStatutExplanation(explanationText);
+        resp.setSilenceRadioStatus(silenceRadioStatus);
+        resp.setJoursSansActivite(joursSansActivite);
+        resp.setFrequenceJours(frequenceJours);
         return resp;
+    }
+
+    private int calculateFrequenceJours(String segment) {
+        if (segment == null) return 10;
+        return switch (segment.trim().toUpperCase()) {
+            case "A" -> 7;
+            case "B" -> 10;
+            case "C" -> 15;
+            case "D" -> 30;
+            default -> 10;
+        };
     }
 
     // Retourne la liste de toutes les visites commerciales libres (hors VACTIS, action = null)

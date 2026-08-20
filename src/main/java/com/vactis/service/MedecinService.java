@@ -170,10 +170,22 @@ public class MedecinService {
 
         boolean modifie = false;
 
+        List<Object[]> totalCasRows = extractionDonneesRepository.countCasGroupedByMedecin();
+        Map<Long, Long> totalCasMap = new HashMap<>();
+        for (Object[] row : totalCasRows) {
+            if (row[0] != null && row[1] != null) {
+                totalCasMap.put((Long) row[0], ((Number) row[1]).longValue());
+            }
+        }
+
         for (Medecin m : medecins) {
             String key = String.valueOf(m.getId());
             long valM = caM.getOrDefault(key, 0L);
             long valMm1 = caMm1.getOrDefault(key, 0L);
+
+            m.setCaMois((int) valM);
+            m.setCaBaseline((int) valMm1);
+            m.setTotalCas(totalCasMap.getOrDefault(m.getId(), 0L).intValue());
 
             String statutDynamique = null;
 
@@ -197,13 +209,16 @@ public class MedecinService {
                 statutDynamique = "ACTIF_STABLE";
             }
 
+            m.setCaMois((int) valM);
+            m.setCaBaseline((int) valMm1);
+
             if (statutDynamique != null && !statutDynamique.equalsIgnoreCase(m.getStatut())) {
                 m.setStatut(statutDynamique.toUpperCase());
                 try {
                     m.setStatutPilotage(StatutPilotage.valueOf(statutDynamique.toUpperCase()));
                 } catch (Exception ignored) {}
-                modifie = true;
             }
+            modifie = true;
         }
 
         if (modifie) {

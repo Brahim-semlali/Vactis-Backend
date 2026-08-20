@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.*;
 
@@ -142,6 +143,12 @@ public class ExcelImportService {
             LocalDate maxDate = docRows.stream().map(r -> r.dateRec).filter(Objects::nonNull).max(LocalDate::compareTo).orElse(LocalDate.now());
             String mainSpec = docRows.stream().map(r -> r.specialite).filter(s -> !s.isEmpty()).findFirst().orElse("Autre");
             String mainOrg = docRows.stream().map(r -> r.organisme).filter(o -> !o.isEmpty()).findFirst().orElse("Cabinet / Hôpital");
+            String mainVille = docRows.stream().map(r -> r.lieu).filter(l -> !l.isEmpty())
+                    .collect(java.util.stream.Collectors.groupingBy(l -> l, java.util.stream.Collectors.counting()))
+                    .entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse(null);
 
             String expectedCode = String.format("MED%03d", codeSeq++);
             Medecin medecin = existingMedecinsMap.get(expectedCode.toUpperCase());
@@ -154,12 +161,31 @@ public class ExcelImportService {
             medecin.setNom(parsedName[1]);
             medecin.setSpecialite(mainSpec);
             medecin.setOrganisme(mainOrg);
-            medecin.setVille("Marrakech");
-            String statutResult = controleService.determinerEtat(TypeControle.STATUT, (long) totalCa);
+            YearMonth maxYm = docRows.stream()
+                    .map(r -> r.dateRec)
+                    .filter(Objects::nonNull)
+                    .map(YearMonth::from)
+                    .max(YearMonth::compareTo)
+                    .orElse(YearMonth.now());
+
+            int caMoisActuel = docRows.stream()
+                    .filter(r -> r.dateRec != null && YearMonth.from(r.dateRec).equals(maxYm))
+                    .mapToInt(r -> r.prixPay)
+                    .sum();
+
+            int caBaselineRef = docRows.stream()
+                    .filter(r -> r.dateRec != null && YearMonth.from(r.dateRec).equals(maxYm.minusMonths(1)))
+                    .mapToInt(r -> r.prixPay)
+                    .sum();
+
+            String statutResult = controleService.determinerEtat(TypeControle.STATUT, (long) caMoisActuel);
             medecin.setStatut(statutResult != null ? statutResult : "NOUVEAU");
-            medecin.setStatutPilotage(determineStatutPilotage(totalCa, docRows.size(), codeSeq));
-            medecin.setRisqueUrgence(totalCa > 50000 ? RisqueUrgence.FAIBLE : (totalCa > 15000 ? RisqueUrgence.MOYEN : RisqueUrgence.ELEVE));
-            medecin.setCaMois(totalCa);
+            medecin.setStatutPilotage(determineStatutPilotage(statutResult, caMoisActuel));
+            medecin.setRisqueUrgence(caMoisActuel > 50000 ? RisqueUrgence.FAIBLE : (caMoisActuel > 15000 ? RisqueUrgence.MOYEN : RisqueUrgence.ELEVE));
+            medecin.setCaMois(caMoisActuel);
+            medecin.setCaBaseline(caBaselineRef);
+            medecin.setCaTotal(totalCa);
+            medecin.setTotalCas(docRows.size());
             medecin.setDatePremiereCollaboration(minDate);
             medecin.setDateDerniereActivite(maxDate);
             String segmentResult = controleService.determinerEtat(TypeControle.SEGEMENTS, (long) totalCa);
@@ -206,6 +232,8 @@ public class ExcelImportService {
     private void generateActionsForMedecins(List<Medecin> medecins) {
         List<Action> actions = new ArrayList<>();
         String[] commerciaux = new String[]{"Karim Bennani", "Salma Idrissi"};
+        // Cycle mensuel courant calculé dynamiquement (format yyyy-MM)
+        String cycleCourant = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
         int idx = 0;
 
         for (Medecin m : medecins) {
@@ -225,7 +253,7 @@ public class ExcelImportService {
                 a.setLieuOrganisme(m.getOrganisme());
                 a.setBacklog(false);
                 a.setUrgenceSilence(true);
-                a.setCycleMensuel("2026-07");
+                a.setCycleMensuel(cycleCourant);
                 a.setCommentaire("Relance prioritaire sur données fictives.");
                 actions.add(a);
             } else if ("PROGRESSION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.PROGRESSION) {
@@ -241,7 +269,7 @@ public class ExcelImportService {
                 a.setLieuOrganisme(m.getOrganisme());
                 a.setBacklog(false);
                 a.setUrgenceSilence(false);
-                a.setCycleMensuel("2026-07");
+                a.setCycleMensuel(cycleCourant);
                 a.setCommentaire("Visite de suivi progression effectuée.");
                 actions.add(a);
             } else if ("ONBOARDING".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.ONBOARDING) {
@@ -257,7 +285,7 @@ public class ExcelImportService {
                 a.setLieuOrganisme(m.getOrganisme());
                 a.setBacklog(false);
                 a.setUrgenceSilence(false);
-                a.setCycleMensuel("2026-07");
+                a.setCycleMensuel(cycleCourant);
                 a.setCommentaire("Première visite d onboarding.");
                 actions.add(a);
             } else if ("SILENCE_CRITIQUE".equals(statutMed) || "RETENTION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.SILENCE_CRITIQUE) {
@@ -273,8 +301,24 @@ public class ExcelImportService {
                 a.setLieuOrganisme(m.getOrganisme());
                 a.setBacklog(false);
                 a.setUrgenceSilence(true);
-                a.setCycleMensuel("2026-07");
+                a.setCycleMensuel(cycleCourant);
                 a.setCommentaire("Silence prolongé à traiter en priorité.");
+                actions.add(a);
+            } else {
+                Action a = new Action();
+                a.setMedecin(m);
+                a.setStatut(statutMed);
+                a.setSegment(m.getSegment());
+                a.setActionRecommandee("visite suivi régulier");
+                a.setUrgence(UrgenceAction.FAIBLE);
+                a.setEtatAction(EtatAction.PLANIFIEE);
+                a.setDateVisite(LocalDate.now().plusDays(5));
+                a.setCommercial(commercial);
+                a.setLieuOrganisme(m.getOrganisme());
+                a.setBacklog(false);
+                a.setUrgenceSilence(false);
+                a.setCycleMensuel(cycleCourant);
+                a.setCommentaire("Visite de suivi commercial régulier et fidélisation.");
                 actions.add(a);
             }
         }
@@ -302,12 +346,15 @@ public class ExcelImportService {
         return new String[]{prenom, nom};
     }
 
-    private StatutPilotage determineStatutPilotage(int totalCa, int dossierCount, int seq) {
-        if (seq % 5 == 0) return StatutPilotage.SILENCE_CRITIQUE;
-        if (seq % 4 == 0) return StatutPilotage.SURVEILLANCE;
-        if (seq % 3 == 0) return StatutPilotage.ONBOARDING;
-        if (totalCa >= 30000) return StatutPilotage.PROGRESSION;
-        return StatutPilotage.ACTIF;
+    private StatutPilotage determineStatutPilotage(String statut, int totalCa) {
+        if (statut == null) return StatutPilotage.ACTIF;
+        return switch (statut.toUpperCase()) {
+            case "PROGRESSION" -> StatutPilotage.PROGRESSION;
+            case "SURVEILLANCE" -> StatutPilotage.SURVEILLANCE;
+            case "SILENCE_CRITIQUE", "RETENTION" -> StatutPilotage.SILENCE_CRITIQUE;
+            case "ONBOARDING" -> StatutPilotage.ONBOARDING;
+            default -> StatutPilotage.ACTIF;
+        };
     }
 
     private String getCellValueAsString(Cell cell) {

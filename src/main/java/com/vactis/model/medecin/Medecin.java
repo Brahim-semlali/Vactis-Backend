@@ -74,6 +74,15 @@ public class Medecin {
     @Column(name = "ca_mois")
     private Integer caMois;
 
+    @Column(name = "ca_baseline")
+    private Integer caBaseline;
+
+    @Column(name = "ca_total")
+    private Integer caTotal;
+
+    @Column(name = "total_cas")
+    private Integer totalCas;
+
     @Column(name = "date_premiere_collaboration")
     private LocalDate datePremiereCollaboration;
 

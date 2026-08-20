@@ -139,4 +139,14 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
             @Param("startDate") java.time.LocalDate startDate,
             @Param("endDate") java.time.LocalDate endDate
     );
+
+    /**
+     * Retourne la date de réception du dernier dossier médical (patient) envoyé au labo par le médecin.
+     */
+    @Query("""
+        select max(e.dateReception)
+        from ExtractionDonnees e
+        where e.medecin.id = :medecinId
+    """)
+    java.time.LocalDate findMaxDateReceptionByMedecinId(@Param("medecinId") Long medecinId);
 }
