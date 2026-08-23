@@ -11,10 +11,10 @@ import com.vactis.dto.activite.TopMouvementsResponse;
 import com.vactis.dto.activite.TransitionsStatutsResponse;
 import com.vactis.dto.activite.ActionsVactisResponse;
 import com.vactis.dto.activite.CompteRenduTerrainResponse;
-import com.vactis.service.ActiviteImpactService;
-import com.vactis.service.ActivitePortefeuilleService;
-import com.vactis.service.ActiviteService;
-import com.vactis.service.ActiviteTerrainService;
+import com.vactis.service.Activite.ActiviteImpactService;
+import com.vactis.service.Activite.ActivitePortefeuilleService;
+import com.vactis.service.Activite.ActiviteService;
+import com.vactis.service.Activite.ActiviteTerrainService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

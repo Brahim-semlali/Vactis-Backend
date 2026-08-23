@@ -1,4 +1,4 @@
-package com.vactis.service;
+package com.vactis.service.Activite;
 
 import com.vactis.model.Controle.TypeControle;
 import com.vactis.model.medecin.Medecin;
@@ -6,6 +6,7 @@ import com.vactis.model.medecin.RetourTerrain;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.RetourTerrainRepository;
+import com.vactis.service.ControleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

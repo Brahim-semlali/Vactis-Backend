@@ -7,10 +7,9 @@ import com.vactis.dto.action.ActionPageResponse;
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
 import com.vactis.model.action.UrgenceAction;
-import com.vactis.model.medecin.StatutPilotage;
 import com.vactis.repository.ActionRepository;
 
-import lombok.RequiredArgsConstructor;
+import com.vactis.service.Activite.SegmentationService;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

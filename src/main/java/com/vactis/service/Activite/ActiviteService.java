@@ -1,4 +1,4 @@
-package com.vactis.service;
+package com.vactis.service.Activite;
 
 import com.vactis.dto.activite.ComparaisonMetriqueResponse;
 import com.vactis.dto.activite.ComparaisonResponse;

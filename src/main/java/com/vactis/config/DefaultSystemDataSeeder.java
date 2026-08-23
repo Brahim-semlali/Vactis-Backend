@@ -1,8 +1,9 @@
 package com.vactis.config;
 
 import com.vactis.model.auth.AuthSettings;
-import com.vactis.model.auth.Role;
 import com.vactis.model.auth.Users;
+import com.vactis.model.Roles.Roles;
+import com.vactis.repository.RoleRepository;
 import com.vactis.model.menu.MenuItem;
 import com.vactis.repository.auth.AuthSettingsRepository;
 import com.vactis.repository.auth.UserRepository;
@@ -24,6 +25,7 @@ import java.util.List;
 public class DefaultSystemDataSeeder implements CommandLineRunner {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final AuthSettingsRepository authSettingsRepository;
     private final MenuItemRepository menuItemRepository;
     private final PasswordEncoder passwordEncoder;
@@ -31,8 +33,9 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) {
         initAuthSettings();
-        initAdminUser();
         initMenuItems();
+        initRoles();
+        initAdminUser();
     }
 
     private void initAuthSettings() {
@@ -55,7 +58,8 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
             admin.setLastName("VACTIS");
             admin.setEmail("admin@vactis.local");
             admin.setPhone("0600000000");
-            admin.setRole(Role.ADMIN);
+                admin.setRoles(roleRepository.findByNameRoleIgnoreCase("ADMIN")
+                    .orElseThrow(() -> new IllegalStateException("Le rôle ADMIN n'existe pas")));
             admin.setEnabled(true);
             admin.setAccountLocked(false);
             admin.setFailedLoginAttempts(0);
@@ -63,10 +67,28 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
         }
     }
 
+    private void initRoles() {
+        createRoleIfMissing("ADMIN", "Administrateur du système");
+        createRoleIfMissing("USER", "Utilisateur standard");
+        Roles admin = roleRepository.findByNameRoleIgnoreCase("ADMIN")
+            .orElseThrow(() -> new IllegalStateException("Le rôle ADMIN n'existe pas"));
+        admin.setMenuItems(menuItemRepository.findAll());
+        roleRepository.save(admin);
+    }
+
+    private void createRoleIfMissing(String name, String description) {
+        if (roleRepository.findByNameRoleIgnoreCase(name).isEmpty()) {
+            Roles role = new Roles();
+            role.setNameRole(name);
+            role.setDescription(description);
+            role.setMenuItems(List.of());
+            roleRepository.save(role);
+        }
+    }
+
     private void initMenuItems() {
-        if (menuItemRepository.count() == 0) {
-            log.info("Initialisation des éléments de menu de la barre latérale...");
-            List<String[]> items = List.of(
+        log.info("Vérification des éléments de menu de la barre latérale...");
+        List<String[]> items = List.of(
                     new String[]{"Accueil", "home", "/accueil", "1"},
                     new String[]{"Dashboard Direction", "dashboard", "/dashboard-direction", "2"},
                     new String[]{"Rapport commercial", "rapport", "/rapport-commercial", "3"},
@@ -81,17 +103,29 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
                     new String[]{"Batches", "batches", "/batches", "12"},
                     new String[]{"Exports terrain", "exports", "/exports-terrain", "13"},
                     new String[]{"Statut API", "statut", "/statut-api", "14"}
-            );
+        );
 
-            for (String[] arr : items) {
-                MenuItem m = new MenuItem();
-                m.setLabel(arr[0]);
-                m.setIcon(arr[1]);
-                m.setRoute(arr[2]);
-                m.setOrder(Integer.parseInt(arr[3]));
-                m.setIsVisible(true);
-                menuItemRepository.save(m);
-            }
+        for (String[] arr : items) {
+            MenuItem m = menuItemRepository.findByRoute(arr[2]).orElseGet(MenuItem::new);
+            m.setLabel(arr[0]);
+            m.setIcon(arr[1]);
+            m.setRoute(arr[2]);
+            m.setOrder(Integer.parseInt(arr[3]));
+            m.setIsVisible(true);
+            menuItemRepository.save(m);
         }
+
+        ensureMenuItem("Rôles", "roles", "/roles", 15);
+        ensureMenuItem("Users", "users", "/users", 16);
+    }
+
+    private void ensureMenuItem(String label, String icon, String route, int order) {
+        MenuItem menu = menuItemRepository.findByRoute(route).orElseGet(MenuItem::new);
+        menu.setLabel(label);
+        menu.setIcon(icon);
+        menu.setRoute(route);
+        menu.setOrder(order);
+        menu.setIsVisible(true);
+        menuItemRepository.save(menu);
     }
 }

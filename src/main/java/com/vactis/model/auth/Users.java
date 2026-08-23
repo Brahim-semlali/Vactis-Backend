@@ -2,6 +2,7 @@ package com.vactis.model.auth;
 
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.vactis.model.Roles.Roles;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -42,9 +43,6 @@ public class Users implements UserDetails {
 
     private String phone;
 
-    @Enumerated(EnumType.STRING)
-    private Role role;
-
     @Column(nullable = false)
     private boolean enabled = true;
 
@@ -72,6 +70,10 @@ public class Users implements UserDetails {
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
 
+    @ManyToOne
+    @JoinColumn(name = "idRole")
+    private Roles roles;
+
     public LocalDateTime getLockEndTime() {
         if (lockedAt == null || lockedUntil == null) {
             return null;
@@ -81,7 +83,10 @@ public class Users implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        if (roles == null) {
+            return List.of(); // ou retourner un rôle par défaut
+        }
+        return List.of(new SimpleGrantedAuthority("ROLE_" + roles.getNameRole()));
     }
 
     @Override

@@ -6,8 +6,9 @@ import com.vactis.dto.auth.LoginRequest;
 import com.vactis.dto.auth.RegisterRequest;
 import com.vactis.exception.AuthException;
 import com.vactis.model.auth.AuthSettings;
-import com.vactis.model.auth.Role;
+import com.vactis.model.Roles.Roles;
 import com.vactis.model.auth.Users;
+import com.vactis.repository.RoleRepository;
 import com.vactis.repository.auth.UserRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ import java.time.LocalDateTime;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final AuthSettingsService authSettingsService;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
@@ -52,7 +54,9 @@ public class AuthService {
         user.setLastName(request.lastName());
         user.setEmail(request.email());
         user.setPhone(request.phone());
-        user.setRole(Role.USER);
+        Roles userRole = roleRepository.findByNameRoleIgnoreCase("USER")
+            .orElseThrow(() -> new IllegalStateException("Le rôle USER n'existe pas"));
+        user.setRoles(userRole);
         user.setEnabled(true);
         user.setAccountLocked(false);
         user.setFailedLoginAttempts(0);

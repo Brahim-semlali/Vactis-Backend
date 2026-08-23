@@ -1,4 +1,4 @@
-package com.vactis.service;
+package com.vactis.service.Activite;
 
 import com.vactis.dto.activite.DetailEvolutionResponse;
 import com.vactis.dto.activite.EvolutionParCommercialResponse;

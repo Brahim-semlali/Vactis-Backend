@@ -1,11 +1,12 @@
 package com.vactis.service;
 
-import com.vactis.model.auth.Role;
 import com.vactis.model.auth.Users;
+import com.vactis.model.Roles.Roles;
 import com.vactis.model.menu.MenuItem;
 import com.vactis.model.menu.MenuUserAccess;
 import com.vactis.repository.menu.MenuItemRepository;
 import com.vactis.repository.menu.MenuUserAccessRepository;
+import com.vactis.repository.RoleRepository;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import java.util.List;
 public class MenuItemService {
     private final MenuItemRepository menuItemRepository;
     private final MenuUserAccessRepository menuUserAccessRepository;
+    private final RoleRepository roleRepository;
 
     // Ajoute une nouvelle rubrique de menu et configure ses accès
     @Transactional
@@ -54,14 +56,20 @@ public class MenuItemService {
         saveAccess(id, menuItem.getAllowedUserIds());
     }
 
-    // Retourne les menus visibles autorisés pour l'utilisateur (tous si ADMIN, filtrés si USER)
+    // Retourne les menus visibles associés au rôle de l'utilisateur connecté.
+    @Transactional(readOnly = true)
     public List<MenuItem> getAllMenu(Users user){
-        if (user.getRole() == Role.ADMIN) {
-            return menuItemRepository.findByIsVisibleTrueOrderByOrder();
+        if (user == null || user.getRoles() == null) {
+            return List.of();
         }
 
-        List<Long> allowedMenuIds = menuUserAccessRepository.findByIdUser(user.getId()).stream()
-                .map(MenuUserAccess::getIdMenu)
+        Roles role = roleRepository.findById(user.getRoles().getIdRole()).orElse(null);
+        if (role == null || role.getMenuItems() == null) {
+            return List.of();
+        }
+
+        List<Long> allowedMenuIds = role.getMenuItems().stream()
+                .map(MenuItem::getIdMenu)
                 .toList();
 
         return menuItemRepository.findByIsVisibleTrueOrderByOrder().stream()

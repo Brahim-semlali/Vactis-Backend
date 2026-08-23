@@ -14,6 +14,7 @@ import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.RetourTerrainRepository;
 import com.vactis.model.Controle.TypeControle;
 
+import com.vactis.service.Activite.SegmentationService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;

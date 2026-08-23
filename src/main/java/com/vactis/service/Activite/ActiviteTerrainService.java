@@ -1,4 +1,4 @@
-package com.vactis.service;
+package com.vactis.service.Activite;
 
 import com.vactis.dto.activite.ActionsVactisResponse;
 import com.vactis.dto.activite.CompteRenduTerrainResponse;

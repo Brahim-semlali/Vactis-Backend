@@ -1,6 +1,8 @@
 package com.vactis.model.menu;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.vactis.model.Roles.Roles;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -37,4 +39,8 @@ public class MenuItem {
             isVisible = true;
         }
     }
+
+    @JsonIgnore
+    @ManyToMany(mappedBy = "menuItems")
+    private List<Roles> roles = new ArrayList<>();
 }

@@ -19,4 +19,6 @@ public interface MenuItemRepository extends JpaRepository<MenuItem, Long> {
             ORDER BY m.order
             """)
     List<MenuItem> findByIsVisibleTrueOrderByOrder();
+
+    java.util.Optional<MenuItem> findByRoute(String route);
 }

@@ -12,6 +12,7 @@ import com.vactis.model.Controle.TypeControle;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
 
+import com.vactis.service.Activite.SegmentationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
