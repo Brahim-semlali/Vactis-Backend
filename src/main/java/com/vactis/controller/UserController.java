@@ -40,6 +40,21 @@ public class UserController {
         userDetailsService.deleteUser(userId);
     }
 
+    @PutMapping("/{userId}/suspend")
+    public void suspendUser(@PathVariable Long userId, @RequestParam int minutes) {
+        userDetailsService.suspendUser(userId, minutes);
+    }
+
+    @PutMapping("/{userId}/block")
+    public void blockUser(@PathVariable Long userId) {
+        userDetailsService.blockUser(userId);
+    }
+
+    @PutMapping("/{userId}/unblock")
+    public void unblockUser(@PathVariable Long userId) {
+        userDetailsService.unblockUser(userId);
+    }
+
     @PutMapping("/{userId}/role/{roleId}")
     public void assignRole(@PathVariable Long userId, @PathVariable Long roleId) {
         userDetailsService.assignRole(userId, roleId);

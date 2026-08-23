@@ -2,6 +2,7 @@ package com.vactis.model.auth;
 
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.vactis.model.Roles.Roles;
 import jakarta.persistence.*;
 import lombok.Data;
@@ -112,6 +113,20 @@ public class Users implements UserDetails {
         }
         LocalDateTime endTime = getLockEndTime();
         return endTime != null && LocalDateTime.now().isBefore(endTime);
+    }
+
+    @JsonProperty("status")
+    public String getStatus() {
+        if (!enabled) {
+            return "DESACTIVE";
+        }
+        if (accountLocked && lockedAt == null) {
+            return "BLOQUE";
+        }
+        if (isSuspended()) {
+            return "SUSPENDU";
+        }
+        return "ACTIF";
     }
 
     @Override

@@ -18,6 +18,7 @@ import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.Objects;
+import java.time.LocalDateTime;
 import jakarta.persistence.EntityNotFoundException;
 
 @Slf4j
@@ -87,6 +88,38 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilisateur introuvable : " + userId);
         }
         userRepository.deleteById(userId);
+    }
+
+    public void suspendUser(Long userId, int minutes) {
+        if (minutes <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La durée doit être supérieure à zéro");
+        }
+        Users user = findUser(userId);
+        user.setAccountLocked(true);
+        user.setLockedAt(LocalDateTime.now());
+        user.setLockedUntil(minutes);
+        userRepository.saveAndFlush(user);
+    }
+
+    public void blockUser(Long userId) {
+        Users user = findUser(userId);
+        user.setAccountLocked(true);
+        user.setLockedAt(null);
+        user.setLockedUntil(null);
+        userRepository.saveAndFlush(user);
+    }
+
+    public void unblockUser(Long userId) {
+        Users user = findUser(userId);
+        user.setAccountLocked(false);
+        user.setLockedAt(null);
+        user.setLockedUntil(null);
+        userRepository.saveAndFlush(user);
+    }
+
+    private Users findUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilisateur introuvable : " + userId));
     }
 
     private void applyUserData(Users user, UserAdminRequest request) {

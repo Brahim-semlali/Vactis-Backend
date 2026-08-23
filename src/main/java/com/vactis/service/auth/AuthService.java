@@ -82,6 +82,11 @@ public class AuthService {
 
         releaseExpiredLock(user);
 
+        if (user.isAccountLocked() && user.getLockedAt() == null) {
+            log.warn("[AUTH] Connexion refusée | username={} | raison=compte_bloque", username);
+            throw AuthException.accountLocked(null, null, settings.getMaxFailedAttempts());
+        }
+
         if (!user.isEnabled()) {
             log.warn("[AUTH] Connexion refusée | username={} | raison=compte_desactive", username);
             throw AuthException.accountDisabled();
@@ -115,7 +120,10 @@ public class AuthService {
     }
 
     private void releaseExpiredLock(Users user) {
-        if (user.isAccountLocked() && !user.isSuspended()) {
+        if (user.isAccountLocked()
+            && user.getLockedAt() != null
+            && user.getLockedUntil() != null
+            && !user.isSuspended()) {
             user.setAccountLocked(false);
             user.setLockedAt(null);
             user.setLockedUntil(null);
