@@ -42,7 +42,7 @@ public class ActiviteTerrainService {
         LocalDate end = ym.atEndOfMonth();
 
         List<RetourTerrain> retours = retourTerrainRepository.findByDateVisiteBetween(start, end);
-        Long actionsCount = actionRepository.countAllActions();
+        Long actionsCount = actionRepository.countByCycleMensuel(ym.format(YYYY_MM));
         long actionsGenerees = actionsCount != null ? actionsCount : 0L;
 
         long renseignees = retours.size();

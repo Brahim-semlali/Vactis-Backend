@@ -23,6 +23,8 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
     """)
     Long countAllActions();
 
+    Long countByCycleMensuel(String cycleMensuel);
+
     // Compte les actions par état (PLANIFIEE, REALISEE, etc.)
     Long countByEtatAction(EtatAction etatAction);
 

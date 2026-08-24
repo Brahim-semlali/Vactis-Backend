@@ -92,7 +92,7 @@ public class ActiviteImpactService {
                 qualif(r) == QualificationVisite.NON_RENSEIGNE || qualif(r) == QualificationVisite.NEUTRE).count();
 
         // ── Exécution des actions VACTIS ─────────────────────────────────────
-        long actionsGenerees  = Optional.ofNullable(actionRepository.countAllActions()).orElse(0L);
+        long actionsGenerees  = Optional.ofNullable(actionRepository.countByCycleMensuel(ym.format(YYYY_MM))).orElse(0L);
         long excluesDirection = Optional.ofNullable(actionRepository.countActionsExcluesDirection()).orElse(0L);
         long vactisRenseignees   = retours.stream().filter(this::isVactis).count();
         long vactisNonRealisees  = retours.stream().filter(r -> isVactis(r) && isNonRealisee(r)).count();
