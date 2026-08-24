@@ -39,9 +39,9 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
     """)
     Long sumPrixAPayerByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
 
-    // Compte le nombre total de dossiers reçus sur une période
+    // Compte le nombre total d'analyses reçues sur une période
     @Query("""
-        select count(e)
+        select coalesce(sum(e.nombreAnalyses), 0)
         from ExtractionDonnees e
         where e.dateReception >= :startDate and e.dateReception <= :endDate
     """)
@@ -63,9 +63,9 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
     """)
     Long sumPrixAPayerWithMedecinByDateRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
 
-    // Compte les dossiers non affectés à un médecin sur une période
+    // Compte les analyses non affectées à un médecin sur une période
     @Query("""
-        select count(e)
+        select coalesce(sum(e.nombreAnalyses), 0)
         from ExtractionDonnees e
         where e.dateReception >= :startDate and e.dateReception <= :endDate and e.medecin is null
     """)
@@ -109,12 +109,12 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
     );
 
     /**
-     * Compte le nombre de dossiers (cas) par médecin sur une période donnée.
+     * Compte le nombre d'analyses par médecin sur une période donnée.
      * Retourne une liste de tableaux [medecinId, nombreCas].
      * Seuls les médecins avec au moins un dossier affecté sur la période sont inclus.
      */
     @Query("""
-        select e.medecin.id, count(e)
+        select e.medecin.id, coalesce(sum(e.nombreAnalyses), 0)
         from ExtractionDonnees e
         where e.dateReception >= :startDate and e.dateReception <= :endDate
           and e.medecin is not null

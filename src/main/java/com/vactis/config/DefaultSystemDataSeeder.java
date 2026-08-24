@@ -11,6 +11,7 @@ import com.vactis.repository.menu.MenuItemRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,6 +30,9 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     private final AuthSettingsRepository authSettingsRepository;
     private final MenuItemRepository menuItemRepository;
     private final PasswordEncoder passwordEncoder;
+
+    @Value("${VACTIS_ADMIN_PASSWORD:}")
+    private String adminPassword;
 
     @Override
     public void run(String... args) {
@@ -50,10 +54,13 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
 
     private void initAdminUser() {
         if (!userRepository.existsByUsername("admin")) {
+            if (adminPassword == null || adminPassword.isBlank()) {
+                throw new IllegalStateException("VACTIS_ADMIN_PASSWORD doit être défini pour créer le compte admin");
+            }
             log.info("Création du compte administrateur VACTIS par défaut...");
             Users admin = new Users();
             admin.setUsername("admin");
-            admin.setPassword(passwordEncoder.encode("password"));
+            admin.setPassword(passwordEncoder.encode(adminPassword));
             admin.setFirstName("Admin");
             admin.setLastName("VACTIS");
             admin.setEmail("admin@vactis.local");

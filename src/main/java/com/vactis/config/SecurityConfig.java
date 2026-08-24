@@ -53,6 +53,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/account-status").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers(
+                            "/users/**",
+                            "/roles/**",
+                            "/api/admin/**",
+                            "/api/menu/AddMenu",
+                            "/api/menu/Delete/**",
+                            "/api/menu/Update/**",
+                            "/api/controle/**",
+                            "/api/medecins/sync"
+                        ).hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

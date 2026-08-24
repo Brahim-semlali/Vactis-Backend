@@ -77,7 +77,7 @@ public class ActiviteImpactService {
 
         // Chargement en une seule requête avec fetch sur action + medecin (évite N+1)
         List<RetourTerrain> retours = retourTerrainRepository.findByDateVisiteBetweenWithFetch(start, end);
-        enrichAndLinkVactisActions(retours);
+        enrichAndLinkVactisActions(retours, ym.format(YYYY_MM));
 
         // ── Vue globale ──────────────────────────────────────────────────────
         long totalRenseignees      = retours.size();
@@ -93,7 +93,7 @@ public class ActiviteImpactService {
 
         // ── Exécution des actions VACTIS ─────────────────────────────────────
         long actionsGenerees  = Optional.ofNullable(actionRepository.countByCycleMensuel(ym.format(YYYY_MM))).orElse(0L);
-        long excluesDirection = Optional.ofNullable(actionRepository.countActionsExcluesDirection()).orElse(0L);
+        long excluesDirection = Optional.ofNullable(actionRepository.countActionsExcluesDirectionByCycle(ym.format(YYYY_MM))).orElse(0L);
         long vactisRenseignees   = retours.stream().filter(this::isVactis).count();
         long vactisNonRealisees  = retours.stream().filter(r -> isVactis(r) && isNonRealisee(r)).count();
         long sanRetourTerrain    = Math.max(0, actionsGenerees - vactisRenseignees);
@@ -138,12 +138,13 @@ public class ActiviteImpactService {
         LocalDate end   = ym.atEndOfMonth();
 
         List<RetourTerrain> tousRetours = retourTerrainRepository.findByDateVisiteBetweenWithFetch(start, end);
-        enrichAndLinkVactisActions(tousRetours);
+        enrichAndLinkVactisActions(tousRetours, ym.format(YYYY_MM));
         List<Medecin> medecins = medecinRepository.findAll();
 
         // Calcul des statuts avant (mois M) et après (mois M+1)
         Map<Long, String> statutsM  = portefeuilleService.buildStatutMapForMonth(ym, medecins);
         Map<Long, String> statutsM1 = portefeuilleService.buildStatutMapForMonth(ym.plusMonths(1), medecins);
+        Set<Long> medecinsAvecDonneesM1 = new HashSet<>(extractionDonneesRepository.findMedecinIdsWithActivityInRange(ym.plusMonths(1).atDay(1), ym.plusMonths(1).atEndOfMonth()));
         boolean apresCalculable = isApresCalculable(ym);
 
         // ── Graphique empilé : TOUTES visites réalisées par commercial ────────
@@ -187,7 +188,7 @@ public class ActiviteImpactService {
         for (RetourTerrain r : vactisRetours) {
             if (!isRealisee(r)) continue; // on n'analyse que les réalisées
             Long medecinId = r.getMedecin().getId();
-            String evo = calculerEvolution(medecinId, ym, statutsM, statutsM1, apresCalculable);
+            String evo = calculerEvolution(medecinId, ym, statutsM, statutsM1, medecinsAvecDonneesM1, apresCalculable);
             totalAnalyse++;
             String comm = commercialSafe(r);
             long[] c = evolutionByComm.computeIfAbsent(comm, k -> new long[5]);
@@ -245,12 +246,14 @@ public class ActiviteImpactService {
      */
     public DetailEvolutionResponse getDetailEvolution(String moisParam, int page, int taille) {
         YearMonth ym    = parseOrDefault(moisParam);
+        page = Math.max(0, page);
+        taille = taille > 0 ? taille : 20;
         LocalDate start = ym.atDay(1);
         LocalDate end   = ym.atEndOfMonth();
 
         // Récupérer et enrichir tous les retours du mois avec fetch
         List<RetourTerrain> tousRetours = retourTerrainRepository.findByDateVisiteBetweenWithFetch(start, end);
-        enrichAndLinkVactisActions(tousRetours);
+        enrichAndLinkVactisActions(tousRetours, ym.format(YYYY_MM));
 
         List<RetourTerrain> vactisRetours = tousRetours.stream()
                 .filter(this::isVactis)
@@ -261,6 +264,7 @@ public class ActiviteImpactService {
         // Calcul batch des statuts M et M+1
         Map<Long, String> statutsM  = portefeuilleService.buildStatutMapForMonth(ym, medecins);
         Map<Long, String> statutsM1 = portefeuilleService.buildStatutMapForMonth(ym.plusMonths(1), medecins);
+        Set<Long> medecinsAvecDonneesM1 = new HashSet<>(extractionDonneesRepository.findMedecinIdsWithActivityInRange(ym.plusMonths(1).atDay(1), ym.plusMonths(1).atEndOfMonth()));
         // M+1 est calculable si le mois M+1 dispose de données d'extraction en base
         boolean apresCalculable = isApresCalculable(ym);
 
@@ -276,7 +280,7 @@ public class ActiviteImpactService {
                 .map(r -> {
                     Long medecinId = r.getMedecin().getId();
                     String statutAvant = statutsM.getOrDefault(medecinId, "exclu");
-                    String evo        = calculerEvolution(medecinId, ym, statutsM, statutsM1, apresCalculable);
+                    String evo        = calculerEvolution(medecinId, ym, statutsM, statutsM1, medecinsAvecDonneesM1, apresCalculable);
                     String statutApres = evo.equals("NON_OBSERVABLE")
                             ? "non_observable"
                             : statutsM1.getOrDefault(medecinId, "exclu");
@@ -327,13 +331,14 @@ public class ActiviteImpactService {
      * cette méthode tente d'associer l'Action existante du médecin pour compléter les informations
      * (action_id et type_visite).
      */
-    private void enrichAndLinkVactisActions(List<RetourTerrain> retours) {
+    private void enrichAndLinkVactisActions(List<RetourTerrain> retours, String cycleMensuel) {
         if (retours.isEmpty()) return;
 
-        Map<Long, Action> actionByMedecinId = actionRepository.findAll().stream()
-                .filter(a -> a.getMedecin() != null)
+        Map<String, Action> actionByMedecinAndDate = actionRepository.findAll().stream()
+            .filter(a -> a.getMedecin() != null && a.getDateVisite() != null)
+            .filter(a -> cycleMensuel.equals(a.getCycleMensuel()))
                 .collect(Collectors.toMap(
-                        a -> a.getMedecin().getId(),
+                a -> actionKey(a.getMedecin().getId(), a.getDateVisite()),
                         a -> a,
                         (a1, a2) -> a1
                 ));
@@ -341,7 +346,9 @@ public class ActiviteImpactService {
         for (RetourTerrain r : retours) {
             if (r.getMedecin() == null) continue;
             Long medId = r.getMedecin().getId();
-            Action action = r.getAction() != null ? r.getAction() : actionByMedecinId.get(medId);
+                Action action = r.getAction() != null
+                    ? r.getAction()
+                    : actionByMedecinAndDate.get(actionKey(medId, r.getDateVisite()));
 
             if (r.getAction() == null && action != null) {
                 r.setAction(action);
@@ -351,6 +358,10 @@ public class ActiviteImpactService {
                 r.setTypeVisite(deduceTypeVisite(r, action));
             }
         }
+    }
+
+    private String actionKey(Long medecinId, LocalDate dateVisite) {
+        return medecinId + "|" + dateVisite;
     }
 
     private TypeVisite deduceTypeVisite(RetourTerrain r, Action a) {
@@ -390,8 +401,9 @@ public class ActiviteImpactService {
     private String calculerEvolution(Long medecinId, YearMonth ym,
                                      Map<Long, String> statutsM,
                                      Map<Long, String> statutsM1,
+                                     Set<Long> medecinsAvecDonneesM1,
                                      boolean apresCalculable) {
-        if (!apresCalculable) return "NON_OBSERVABLE";
+        if (!apresCalculable || !medecinsAvecDonneesM1.contains(medecinId)) return "NON_OBSERVABLE";
 
         String sAvant = statutsM.getOrDefault(medecinId, "exclu");
         String sApres = statutsM1.getOrDefault(medecinId, "exclu");
@@ -422,7 +434,7 @@ public class ActiviteImpactService {
     }
 
     private boolean isRealisee(RetourTerrain r) {
-        return r.getStatutVisite() != null && r.getStatutVisite() == StatutVisite.REALISEE;
+        return r.getStatutVisite() == null || r.getStatutVisite() == StatutVisite.REALISEE;
     }
 
     private boolean isNonRealisee(RetourTerrain r) {

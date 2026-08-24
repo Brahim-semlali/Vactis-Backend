@@ -25,6 +25,14 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
 
     Long countByCycleMensuel(String cycleMensuel);
 
+        @Query("""
+                select count(a)
+                from Action a
+                where a.cycleMensuel = :cycleMensuel
+                    and lower(a.statut) = 'exclu'
+        """)
+        Long countActionsExcluesDirectionByCycle(@Param("cycleMensuel") String cycleMensuel);
+
     // Compte les actions par état (PLANIFIEE, REALISEE, etc.)
     Long countByEtatAction(EtatAction etatAction);
 
@@ -99,10 +107,4 @@ public interface ActionRepository extends JpaRepository<Action, Long> {
      * Utilisé pour calculer le dénominateur du taux de réalisation
      * (actions générées - exclues direction).
      */
-    @Query("""
-        select count(a)
-        from Action a
-        where lower(a.statut) = 'exclu'
-    """)
-    Long countActionsExcluesDirection();
 }
