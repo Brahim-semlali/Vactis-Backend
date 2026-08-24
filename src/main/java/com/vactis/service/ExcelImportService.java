@@ -76,6 +76,7 @@ public class ExcelImportService {
 
         // Purger uniquement les données d'extraction et les actions générées lors de l'import
         log.info("Purge et ré-importation des actions et dossiers data_fictif (retours_terrain conservés)...");
+        retourTerrainRepository.detachActions();
         actionRepository.deleteAllInBatch();
         extractionDonneesRepository.deleteAllInBatch();
         extractionDonneesRepository.flush();

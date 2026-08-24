@@ -168,6 +168,12 @@ public class MedecinService {
 
         Map<String, Long> caM = buildCaMapForMonth(ymM);
         Map<String, Long> caMm1 = buildCaMapForMonth(ymMm1);
+        Map<String, Long> caMm2 = buildCaMapForMonth(ymM.minusMonths(2));
+        Map<String, Long> caMm3 = buildCaMapForMonth(ymM.minusMonths(3));
+        Map<String, Long> casM = buildCasMapForMonth(ymM);
+        Map<String, Long> casMm1 = buildCasMapForMonth(ymMm1);
+        Map<String, Long> casMm2 = buildCasMapForMonth(ymM.minusMonths(2));
+        Map<String, Long> casMm3 = buildCasMapForMonth(ymM.minusMonths(3));
 
         boolean modifie = false;
 
@@ -195,8 +201,12 @@ public class MedecinService {
             } else if (valMm1 == 0 && valM > 0) {
                 statutDynamique = "ONBOARDING";
             } else if (valMm1 > 0) {
-                double variation = ((double) (valM - valMm1) / (double) valMm1) * 100.0;
-                long varRounded = Math.round(variation);
+                double caReference = average(caMm1, caMm2, caMm3, key);
+                double casReference = average(casMm1, casMm2, casMm3, key);
+                double variationCa = ((valM - caReference) / Math.max(caReference, 300.0)) * 100.0;
+                double variationCas = ((casM.getOrDefault(key, 0L) - casReference)
+                        / Math.max(casReference, 1.0)) * 100.0;
+                long varRounded = Math.round((0.60 * variationCa) + (0.40 * variationCas));
 
                 statutDynamique = controleService.determinerEtat(TypeControle.STATUT, varRounded);
                 if (statutDynamique == null) {
@@ -239,6 +249,21 @@ public class MedecinService {
             }
         }
         return map;
+    }
+
+    private Map<String, Long> buildCasMapForMonth(YearMonth ym) {
+        List<Object[]> rows = extractionDonneesRepository.countCasByMedecinAndDateRange(ym.atDay(1), ym.atEndOfMonth());
+        Map<String, Long> map = new HashMap<>();
+        for (Object[] row : rows) {
+            if (row[0] != null && row[1] != null) {
+                map.put(String.valueOf((Long) row[0]), ((Number) row[1]).longValue());
+            }
+        }
+        return map;
+    }
+
+    private double average(Map<String, Long> first, Map<String, Long> second, Map<String, Long> third, String key) {
+        return (first.getOrDefault(key, 0L) + second.getOrDefault(key, 0L) + third.getOrDefault(key, 0L)) / 3.0;
     }
 
     // Construit la réponse complète de la page médecins (liste filtrée, KPIs, méta, filtres)

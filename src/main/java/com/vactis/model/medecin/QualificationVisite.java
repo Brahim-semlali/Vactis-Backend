@@ -9,5 +9,6 @@ public enum QualificationVisite {
     FAVORABLE,
     DEFAVORABLE,
     NEUTRE,
+    RECLAMATION,
     NON_RENSEIGNE
 }

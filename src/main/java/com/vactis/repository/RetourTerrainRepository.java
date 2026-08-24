@@ -4,6 +4,7 @@ import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RetourTerrain;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -14,6 +15,10 @@ import java.util.Optional;
 // Repository JPA pour l'historique des retours terrain (visites médicales)
 @Repository
 public interface RetourTerrainRepository extends JpaRepository<RetourTerrain, Long> {
+
+    @Modifying
+    @Query("update RetourTerrain r set r.action = null where r.action is not null")
+    int detachActions();
 
     // Retourne la dernière visite enregistrée pour un médecin (date DESC, created_at DESC)
     Optional<RetourTerrain> findFirstByMedecinOrderByDateVisiteDescCreatedAtDesc(Medecin medecin);

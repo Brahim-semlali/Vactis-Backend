@@ -149,4 +149,12 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
         where e.medecin.id = :medecinId
     """)
     java.time.LocalDate findMaxDateReceptionByMedecinId(@Param("medecinId") Long medecinId);
+
+    @Query("""
+        select distinct e.dateReception
+        from ExtractionDonnees e
+        where e.medecin.id = :medecinId and e.dateReception is not null
+        order by e.dateReception desc
+    """)
+    List<java.time.LocalDate> findDatesReceptionByMedecinId(@Param("medecinId") Long medecinId);
 }

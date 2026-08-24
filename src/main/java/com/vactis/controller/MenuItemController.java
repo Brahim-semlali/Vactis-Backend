@@ -2,7 +2,9 @@ package com.vactis.controller;
 
 import com.vactis.model.auth.Users;
 import com.vactis.model.menu.MenuItem;
+import com.vactis.dto.menu.MenuTreeResponse;
 import com.vactis.service.MenuItemService;
+import com.vactis.service.MenuService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,11 +18,11 @@ import java.util.List;
 @RequestMapping("/api/menu")
 public class MenuItemController {
     private final MenuItemService menuItemService;
+    private final MenuService menuService;
 
-    // Retourne les éléments de menu autorisés pour l'utilisateur connecté
-    @GetMapping("/getAll")
-    public List<MenuItem> getAllMenu(@AuthenticationPrincipal Users user){
-        return menuItemService.getAllMenu(user);
+    @GetMapping("/mon-menu")
+    public List<MenuTreeResponse> getMonMenu(@AuthenticationPrincipal Users user) {
+        return menuService.getMenuPourUtilisateur(user);
     }
 
     // Ajoute une nouvelle rubrique de menu
@@ -41,9 +43,4 @@ public class MenuItemController {
         menuItemService.UpdateMenu(id,menuItem);
     }
 
-    // Accorde l'accès à une rubrique de menu pour un utilisateur donné
-    @PostMapping("/GiveAccess/{idMenu}/{idUser}")
-    public void GiveAccess(@PathVariable Long idMenu, @PathVariable Long idUser){
-        menuItemService.GiveAccess(idMenu, idUser);
-    }
 }

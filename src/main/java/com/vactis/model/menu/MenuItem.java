@@ -29,8 +29,10 @@ public class MenuItem {
 
     private Boolean isVisible = true;
 
-    @Transient
-    private List<Long> allowedUserIds = new ArrayList<>();
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_menu_princ")
+    private MenuPrincipal menuPrincipal;
 
     @PrePersist
     @PreUpdate

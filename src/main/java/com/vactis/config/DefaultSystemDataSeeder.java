@@ -70,10 +70,18 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     private void initRoles() {
         createRoleIfMissing("ADMIN", "Administrateur du système");
         createRoleIfMissing("USER", "Utilisateur standard");
+        createRoleIfMissing("COMMERCIALE", "Commerciale du système");
         Roles admin = roleRepository.findByNameRoleIgnoreCase("ADMIN")
             .orElseThrow(() -> new IllegalStateException("Le rôle ADMIN n'existe pas"));
         admin.setMenuItems(menuItemRepository.findAll());
         roleRepository.save(admin);
+
+        Roles commerciale = roleRepository.findByNameRoleIgnoreCase("COMMERCIALE")
+            .orElseThrow(() -> new IllegalStateException("Le rôle COMMERCIALE n'existe pas"));
+        commerciale.setMenuItems(menuItemRepository.findAll().stream()
+            .filter(menu -> List.of("/accueil", "/medecins", "/actions", "/lecture-activite").contains(menu.getRoute()))
+            .toList());
+        roleRepository.save(commerciale);
     }
 
     private void createRoleIfMissing(String name, String description) {

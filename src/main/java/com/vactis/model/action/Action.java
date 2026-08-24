@@ -14,10 +14,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -26,6 +28,7 @@ import java.time.LocalDateTime;
 @Table(name = "actions")
 @Data
 @NoArgsConstructor
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Action {
 
     @Id
@@ -96,6 +99,12 @@ public class Action {
 
     @Column(name = "date_prochaine_action")
     private LocalDate dateProchaineAction;
+
+    @Transient
+    private Double derniereNoteTerrain;
+
+    @Transient
+    private Integer joursSansActivite;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

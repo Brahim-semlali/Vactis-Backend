@@ -24,8 +24,8 @@ public class SaisieRetourTerrainRequest {
     /** Mandatory if qualification = RECLAMATION. */
     private String commentaire;
 
-    /** Optional rating note for doctor potential (1.0 to 5.0). */
-    private Double notePotentielle;
+    /** Optional rating note for the field visit (1.0 to 5.0). */
+    private Double noteTerrain;
 
     /** Next suggested action. */
     private String prochaineAction;

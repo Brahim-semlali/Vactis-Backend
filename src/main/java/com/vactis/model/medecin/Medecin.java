@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
@@ -62,6 +63,54 @@ public class Medecin {
 
     @Column(name = "score_valeur")
     private Double scoreValeur;
+
+    @Transient
+    private Double potentielSur100;
+
+    @Transient
+    private Double performanceSur100;
+
+    @Transient
+    private Double caMensuelMoyen;
+
+    @Transient
+    private Double poidsEcoSur100;
+
+    @Transient
+    private Double variationMixteSur100;
+
+    @Transient
+    private Double referenceCa;
+
+    @Transient
+    private Double referenceVolume;
+
+    @Transient
+    private Double variationCa;
+
+    @Transient
+    private Double variationVolume;
+
+    @Transient
+    private Integer joursSansActivite;
+
+    @Transient
+    private Double baisseReference;
+
+    @Transient
+    private Double baisseCourte;
+
+    @Transient
+    private String fiabilite;
+
+    @Transient
+    private Integer intervalleEffectif;
+
+    @Transient
+    private Double scoreSilence;
+
+    @Transient
+    private Double scoreRisque;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "statut_pilotage", nullable = false, length = 30)

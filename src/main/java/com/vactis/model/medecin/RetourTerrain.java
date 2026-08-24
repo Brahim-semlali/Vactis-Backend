@@ -26,7 +26,7 @@ public class RetourTerrain {
     @Column(name = "nom_medecin", length = 255)
     private String nomMedecin;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Double note; // Note sur 5 (ex: 4.0)
 
     @Column(name = "date_visite", nullable = false)
@@ -34,6 +34,15 @@ public class RetourTerrain {
 
     @Column(columnDefinition = "TEXT")
     private String commentaire;
+
+    @Column(name = "motif_non_realisation", columnDefinition = "TEXT")
+    private String motifNonRealisation;
+
+    @Column(name = "prochaine_action", length = 255)
+    private String prochaineAction;
+
+    @Column(name = "date_prochaine_action")
+    private LocalDate dateProchaineAction;
 
     @Column(length = 255)
     private String visiteur;

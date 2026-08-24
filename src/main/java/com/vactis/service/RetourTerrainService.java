@@ -120,10 +120,18 @@ public class RetourTerrainService {
     }
 
     // Retourne la dernière visite enregistrée pour un médecin
+    public Optional<RetourTerrain> getDerniereVisite(Medecin medecin) {
+        if (medecin == null) {
+            return Optional.empty();
+        }
+        return retourTerrainRepository.findFirstByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
+    }
+
+    // Retourne la dernière visite enregistrée pour un médecin identifié par son id
     public Optional<RetourTerrain> getDerniereVisite(Long medecinId) {
         Medecin medecin = medecinRepository.findById(medecinId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable."));
-        return retourTerrainRepository.findFirstByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
+        return getDerniereVisite(medecin);
     }
 
     /**

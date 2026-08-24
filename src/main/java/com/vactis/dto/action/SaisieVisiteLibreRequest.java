@@ -24,7 +24,7 @@ public class SaisieVisiteLibreRequest {
     private String motifNonRealisation;
     private String qualification;
     private String commentaire;
-    private Double notePotentielle;
+    private Double noteTerrain;
     private String prochaineAction;
     private LocalDate dateProchaineAction;
 }

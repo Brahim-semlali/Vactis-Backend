@@ -10,6 +10,7 @@ import com.vactis.model.action.UrgenceAction;
 import com.vactis.repository.ActionRepository;
 
 import com.vactis.service.Activite.SegmentationService;
+import com.vactis.service.RetourTerrainService;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ import com.vactis.repository.ExtractionDonneesRepository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 // Service métier pour la gestion, la recherche et le calcul des indicateurs des actions de pilotage
 @Service
@@ -42,6 +44,7 @@ public class ActionService {
     private final MedecinRepository medecinRepository;
     private final SegmentationService segmentationService;
     private final ExtractionDonneesRepository extractionDonneesRepository;
+    private final RetourTerrainService retourTerrainService;
 
     public ActionService(
             ActionRepository actionRepository,
@@ -50,7 +53,8 @@ public class ActionService {
             RetourTerrainRepository retourTerrainRepository,
             MedecinRepository medecinRepository,
             SegmentationService segmentationService,
-            ExtractionDonneesRepository extractionDonneesRepository
+            ExtractionDonneesRepository extractionDonneesRepository,
+            RetourTerrainService retourTerrainService
     ) {
         this.actionRepository = actionRepository;
         this.controleService = controleService;
@@ -59,6 +63,7 @@ public class ActionService {
         this.medecinRepository = medecinRepository;
         this.segmentationService = segmentationService;
         this.extractionDonneesRepository = extractionDonneesRepository;
+        this.retourTerrainService = retourTerrainService;
     }
 
     // Retourne toutes les actions en base
@@ -150,6 +155,15 @@ public class ActionService {
                 lieuOrganisme
         );
 
+            items.forEach(item -> item.setDerniereNoteTerrain(
+                retourTerrainService.getDerniereVisite(item.getMedecin())
+                    .map(RetourTerrain::getNote)
+                    .orElse(null)
+            ));
+            items.forEach(item -> item.setJoursSansActivite(
+                calculateJoursSansActivite(item.getMedecin())
+            ));
+
         ActionMetaResponse meta = new ActionMetaResponse();
         meta.setAffiches((long) items.size());
         meta.setCharges(actionRepository.countAllActions());
@@ -182,12 +196,17 @@ public class ActionService {
                 }
 
                 // Ajuster l'action recommandée et l'urgence pour correspondre au statut du médecin
-                if ("SURVEILLANCE".equals(statutMed) || "SILENCE_CRITIQUE".equals(statutMed) || "RETENTION".equals(statutMed)) {
-                    if (!"visite urgence silence".equals(a.getActionRecommandee())) {
+                int joursSansActivite = calculateJoursSansActivite(m);
+                boolean silenceCritique = joursSansActivite > calculateFrequenceJours(m.getSegment())
+                        || "SILENCE_CRITIQUE".equals(statutMed);
+                if (silenceCritique || "SURVEILLANCE".equals(statutMed) || "RETENTION".equals(statutMed)) {
+                    if (!"visite urgence silence".equals(a.getActionRecommandee())
+                            || a.getUrgence() != UrgenceAction.SILENCE_CRITIQUE
+                            || !Boolean.TRUE.equals(a.getUrgenceSilence())) {
                         a.setActionRecommandee("visite urgence silence");
                         a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
                         a.setUrgenceSilence(true);
-                        a.setCommentaire("Relance prioritaire suite à une baisse d'activité.");
+                        a.setCommentaire("Relance prioritaire suite à une baisse d'activité ou à un silence radio prolongé.");
                         modifie = true;
                     }
                 } else if ("PROGRESSION".equals(statutMed)) {
@@ -233,6 +252,11 @@ public class ActionService {
     public Action reserverAction(Long idAction, String username) {
         Action action = actionRepository.findById(idAction)
                 .orElseThrow(() -> new IllegalArgumentException("Action introuvable (ID: " + idAction + ")"));
+        if (Boolean.TRUE.equals(action.getIsReserved())
+                && action.getReservedBy() != null
+                && !action.getReservedBy().equals(username)) {
+            throw new IllegalStateException("Cette action est déjà réservée par " + action.getReservedBy() + ".");
+        }
         action.setReservedBy(username);
         action.setReservedAt(LocalDateTime.now());
         action.setIsReserved(true);
@@ -248,6 +272,7 @@ public class ActionService {
         Action action = actionRepository.findById(idAction)
                 .orElseThrow(() -> new IllegalArgumentException("Action introuvable (ID: " + idAction + ")"));
 
+        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction());
         boolean realisee = Boolean.TRUE.equals(request.getActionRealisee());
         if (!realisee && (request.getMotifNonRealisation() == null || request.getMotifNonRealisation().isBlank())) {
             throw new IllegalArgumentException("Le motif de non-réalisation est obligatoire si l'action n'est pas réalisée.");
@@ -268,25 +293,18 @@ public class ActionService {
 
         Medecin m = action.getMedecin();
         if (m != null) {
-            if (request.getNotePotentielle() != null) {
-                m.setNoteInput(request.getNotePotentielle());
-                medecinRepository.save(m);
-                segmentationService.recalculerSegmentationPortefeuille();
-            }
-
             RetourTerrain rt = new RetourTerrain();
             rt.setMedecin(m);
             rt.setAction(action);
             rt.setDateVisite(request.getDateVisite() != null ? request.getDateVisite() : LocalDate.now());
             rt.setStatutVisite(realisee ? StatutVisite.REALISEE : StatutVisite.NON_REALISEE);
             rt.setCommentaire(request.getCommentaire());
+            rt.setMotifNonRealisation(request.getMotifNonRealisation());
+            rt.setProchaineAction(request.getProchaineAction());
+            rt.setDateProchaineAction(request.getDateProchaineAction());
             rt.setVisiteur(username != null ? username : action.getCommercial());
-            rt.setNote(request.getNotePotentielle() != null ? request.getNotePotentielle() : 3.0);
-            try {
-                if (request.getQualification() != null) {
-                    rt.setQualification(QualificationVisite.valueOf(request.getQualification().toUpperCase()));
-                }
-            } catch (Exception ignored) {}
+            rt.setNote(request.getNoteTerrain());
+            rt.setQualification(parseQualification(request.getQualification()));
             if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
                 rt.setReclamation(true);
             }
@@ -299,6 +317,7 @@ public class ActionService {
     // Enregistre une visite commerciale libre (hors VACTIS)
     @Transactional
     public RetourTerrain creerVisiteLibre(SaisieVisiteLibreRequest request, String username) {
+        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction());
         Medecin medecin = null;
         if (request.getMedecinId() != null) {
             medecin = medecinRepository.findById(request.getMedecinId())
@@ -309,21 +328,12 @@ public class ActionService {
             medecin.setPrenom(request.getPrenomMedecin() != null ? request.getPrenomMedecin() : "");
             medecin.setSpecialite(request.getSpecialite() != null ? request.getSpecialite() : "Généraliste");
             medecin.setOrganisme(request.getOrganisme() != null ? request.getOrganisme() : "Cabinet privé");
-            medecin.setCodeMedecin("MED_LIBRE_" + (System.currentTimeMillis() % 10000));
+            medecin.setCodeMedecin("MED_LIBRE_" + UUID.randomUUID().toString().replace("-", "").substring(0, 9));
             medecin.setStatut("ONBOARDING");
             medecin.setSegment("D");
-            if (request.getNotePotentielle() != null) {
-                medecin.setNoteInput(request.getNotePotentielle());
-            }
             medecin = medecinRepository.save(medecin);
         } else {
             throw new IllegalArgumentException("Veuillez sélectionner un médecin ou saisir le nom du nouveau médecin.");
-        }
-
-        if (request.getNotePotentielle() != null && request.getMedecinId() != null) {
-            medecin.setNoteInput(request.getNotePotentielle());
-            medecinRepository.save(medecin);
-            segmentationService.recalculerSegmentationPortefeuille();
         }
 
         RetourTerrain rt = new RetourTerrain();
@@ -333,18 +343,47 @@ public class ActionService {
         rt.setDateVisite(dateVisite);
         rt.setStatutVisite(Boolean.FALSE.equals(request.getActionRealisee()) ? StatutVisite.NON_REALISEE : StatutVisite.REALISEE);
         rt.setCommentaire(request.getCommentaire());
+        rt.setMotifNonRealisation(request.getMotifNonRealisation());
+        rt.setProchaineAction(request.getProchaineAction());
+        rt.setDateProchaineAction(request.getDateProchaineAction());
         rt.setVisiteur(username != null ? username : "Commercial");
-        rt.setNote(request.getNotePotentielle() != null ? request.getNotePotentielle() : 3.0);
-        try {
-            if (request.getQualification() != null) {
-                rt.setQualification(QualificationVisite.valueOf(request.getQualification().toUpperCase()));
-            }
-        } catch (Exception ignored) {}
+        rt.setNote(request.getNoteTerrain());
+        rt.setQualification(parseQualification(request.getQualification()));
         if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
             rt.setReclamation(true);
         }
 
         return retourTerrainRepository.save(rt);
+    }
+
+    private void validateVisitRequest(Boolean actionRealisee, LocalDate dateVisite, String motif,
+                                      String qualification, String commentaire, Double noteTerrain,
+                                      LocalDate dateProchaineAction) {
+        if (dateVisite == null || dateVisite.isAfter(LocalDate.now())) {
+            throw new IllegalArgumentException("La date réelle de visite est obligatoire et ne peut pas être future.");
+        }
+        if (Boolean.FALSE.equals(actionRealisee) && (motif == null || motif.isBlank())) {
+            throw new IllegalArgumentException("Le motif de non-réalisation est obligatoire.");
+        }
+        if ("RECLAMATION".equalsIgnoreCase(qualification) && (commentaire == null || commentaire.isBlank())) {
+            throw new IllegalArgumentException("Le commentaire est obligatoire en cas de réclamation.");
+        }
+        if (noteTerrain != null && (noteTerrain < 1.0 || noteTerrain > 5.0)) {
+            throw new IllegalArgumentException("La note potentielle doit être comprise entre 1 et 5.");
+        }
+        if (dateProchaineAction != null && dateProchaineAction.isBefore(dateVisite)) {
+            throw new IllegalArgumentException("La date de la prochaine action doit suivre la date de visite.");
+        }
+        parseQualification(qualification);
+    }
+
+    private QualificationVisite parseQualification(String qualification) {
+        if (qualification == null || qualification.isBlank()) return QualificationVisite.NON_RENSEIGNE;
+        try {
+            return QualificationVisite.valueOf(qualification.trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Qualification invalide.");
+        }
     }
 
     // Génère les données de la fiche contextuelle du médecin
@@ -356,20 +395,7 @@ public class ActionService {
         List<RetourTerrain> historique = retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(m);
 
         // Recherche de la date d'envoi du dernier dossier médical (patient au labo)
-        LocalDate lastDossierDate = extractionDonneesRepository.findMaxDateReceptionByMedecinId(m.getId());
-        if (lastDossierDate == null) {
-            lastDossierDate = m.getDateDerniereActivite();
-        }
-
-        // Calcul dynamique des jours sans activité patient (envoi de dossiers au labo)
-        int joursSansActivite = 0;
-        if (lastDossierDate != null) {
-            long diff = java.time.temporal.ChronoUnit.DAYS.between(lastDossierDate, LocalDate.now());
-            joursSansActivite = diff > 0 ? (int) diff : 0;
-        } else if (m.getDatePremiereCollaboration() != null) {
-            long diff = java.time.temporal.ChronoUnit.DAYS.between(m.getDatePremiereCollaboration(), LocalDate.now());
-            joursSansActivite = diff > 0 ? (int) diff : 0;
-        }
+        int joursSansActivite = calculateJoursSansActivite(m);
 
         // Fréquence attendue basée sur le segment du médecin
         int frequenceJours = calculateFrequenceJours(m.getSegment());
@@ -403,6 +429,23 @@ public class ActionService {
         resp.setJoursSansActivite(joursSansActivite);
         resp.setFrequenceJours(frequenceJours);
         return resp;
+    }
+
+    private int calculateJoursSansActivite(Medecin medecin) {
+        LocalDate lastDossierDate = extractionDonneesRepository.findMaxDateReceptionByMedecinId(medecin.getId());
+        if (lastDossierDate == null) {
+            lastDossierDate = medecin.getDateDerniereActivite();
+        }
+
+        if (lastDossierDate == null) {
+            lastDossierDate = medecin.getDatePremiereCollaboration();
+        }
+        if (lastDossierDate == null) {
+            return 0;
+        }
+
+        long diff = java.time.temporal.ChronoUnit.DAYS.between(lastDossierDate, LocalDate.now());
+        return diff > 0 ? (int) diff : 0;
     }
 
     private int calculateFrequenceJours(String segment) {
