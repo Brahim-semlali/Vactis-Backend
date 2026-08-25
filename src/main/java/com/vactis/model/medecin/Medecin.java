@@ -61,55 +61,60 @@ public class Medecin {
     @Column(name = "note_input")
     private Double noteInput;
 
+    @Transient
+    private String sourcePotentiel;
+
     @Column(name = "score_valeur")
     private Double scoreValeur;
 
-    @Transient
     private Double potentielSur100;
 
-    @Transient
     private Double performanceSur100;
 
     @Transient
-    private Double caMensuelMoyen;
+    private Integer rangPerformance;
 
     @Transient
+    private Integer totalPortefeuillePerformance;
+
+    private Double caMensuelMoyen;
+
     private Double poidsEcoSur100;
 
     @Transient
+    private Double caNormaliseSur100;
+
+    @Transient
+    private Double volumeNormaliseSur100;
+
+    @Transient
+    private Double maxCaPortefeuille;
+
+    @Transient
+    private Double maxVolumePortefeuille;
+
     private Double variationMixteSur100;
 
-    @Transient
     private Double referenceCa;
 
-    @Transient
     private Double referenceVolume;
 
-    @Transient
     private Double variationCa;
 
-    @Transient
     private Double variationVolume;
 
-    @Transient
     private Integer joursSansActivite;
 
-    @Transient
     private Double baisseReference;
 
-    @Transient
     private Double baisseCourte;
 
-    @Transient
     private String fiabilite;
 
-    @Transient
     private Integer intervalleEffectif;
 
-    @Transient
     private Double scoreSilence;
 
-    @Transient
     private Double scoreRisque;
 
     @Enumerated(EnumType.STRING)

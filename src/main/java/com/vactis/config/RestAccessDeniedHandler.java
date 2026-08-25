@@ -20,7 +20,13 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
     public void handle(HttpServletRequest request,
                        HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException {
-        log.warn("[SECURITY] Accès refusé | path={} | {}", request.getServletPath(), accessDeniedException.getMessage());
+        String username = request.getUserPrincipal() == null ? "anonymous" : request.getUserPrincipal().getName();
+        log.warn("[SECURITY] Accès refusé | method={} | path={} | user={} | authorities={} | reason={}",
+            request.getMethod(), request.getServletPath(), username,
+            request.getUserPrincipal() instanceof org.springframework.security.core.Authentication authentication
+                ? authentication.getAuthorities()
+                : "none",
+            accessDeniedException.getMessage());
         SecurityJsonWriter.write(response, HttpServletResponse.SC_FORBIDDEN, new ErrorResponse(
                 AuthErrorCode.ACCESS_DENIED,
                 "Accès refusé à cette ressource",

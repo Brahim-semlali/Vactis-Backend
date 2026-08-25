@@ -128,8 +128,8 @@ public class ActiviteService {
         refCas = Math.round(refCas * 100.0) / 100.0;
         refCa = Math.round(refCa * 100.0) / 100.0;
 
-        ComparaisonMetriqueResponse casComp = buildMetriqueResponse(casM, casMMinus1, refCas);
-        ComparaisonMetriqueResponse caComp = buildMetriqueResponse(caM, caMMinus1, refCa);
+        ComparaisonMetriqueResponse casComp = buildMetriqueResponse(casM, casMMinus1, refCas, 1.0);
+        ComparaisonMetriqueResponse caComp = buildMetriqueResponse(caM, caMMinus1, refCa, 300.0);
 
         return ComparaisonResponse.builder()
                 .mois(ymM.format(YYYY_MM))
@@ -141,12 +141,12 @@ public class ActiviteService {
     }
 
     // Construit la structure de réponse avec les variations en valeur et en pourcentage
-    private ComparaisonMetriqueResponse buildMetriqueResponse(double m, double mMinus1, double ref) {
+    private ComparaisonMetriqueResponse buildMetriqueResponse(double m, double mMinus1, double ref, double floor) {
         double diffMMinus1 = Math.round((m - mMinus1) * 100.0) / 100.0;
-        double pctMMinus1 = mMinus1 > 0 ? Math.round(((m - mMinus1) / mMinus1 * 100.0) * 10.0) / 10.0 : 0.0;
+        double pctMMinus1 = Math.round(((m - mMinus1) / Math.max(mMinus1, floor) * 100.0) * 10.0) / 10.0;
 
         double diffRef = Math.round((m - ref) * 100.0) / 100.0;
-        double pctRef = ref > 0 ? Math.round(((m - ref) / ref * 100.0) * 10.0) / 10.0 : 0.0;
+        double pctRef = Math.round(((m - ref) / Math.max(ref, floor) * 100.0) * 10.0) / 10.0;
 
         return ComparaisonMetriqueResponse.builder()
                 .moisCourant(m)

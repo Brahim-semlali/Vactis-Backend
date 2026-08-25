@@ -15,7 +15,10 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 @Entity
 @Table(name = "users")
@@ -85,9 +88,20 @@ public class Users implements UserDetails {
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         if (roles == null) {
-            return List.of(); // ou retourner un rôle par défaut
+            return List.of();
         }
-        return List.of(new SimpleGrantedAuthority("ROLE_" + roles.getNameRole()));
+        Set<GrantedAuthority> authorities = new HashSet<>();
+        String roleName = roles.getNameRole().trim().toUpperCase(Locale.ROOT);
+        authorities.add(new SimpleGrantedAuthority("ROLE_" + roleName));
+        if (roles.getMenuItems() != null) {
+            roles.getMenuItems().stream()
+                .map(menu -> menu.getRoute())
+                .filter(route -> route != null && !route.isBlank())
+                .map(String::trim)
+                .map(route -> new SimpleGrantedAuthority("MENU:" + route))
+                .forEach(authorities::add);
+        }
+        return authorities;
     }
 
     @Override

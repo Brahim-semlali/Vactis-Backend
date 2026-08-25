@@ -25,9 +25,6 @@ class ActivitePortefeuilleServiceTest {
 
     @Test
     void emptyPortfolioProducesAnEmptyStatusMap() {
-        when(extractionRepository.sumCaByMedecinAndDateRange(any(), any())).thenReturn(List.of());
-        when(extractionRepository.findMedecinIdsWithActivityInRange(any(), any())).thenReturn(List.of());
-
         assertTrue(service.buildStatutMapForMonth(YearMonth.of(2026, 5), List.of()).isEmpty());
     }
 }

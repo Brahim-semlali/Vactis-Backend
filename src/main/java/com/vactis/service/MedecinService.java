@@ -75,7 +75,9 @@ public class MedecinService {
         }
 
         medecin.setNoteInput(noteInput);
-        return medecinRepository.save(medecin);
+        medecinRepository.save(medecin);
+        segmentationService.recalculerSegmentationPortefeuille();
+        return medecinRepository.findById(id).orElse(medecin);
     }
 
     // Retourne les médecins par statut de performance
@@ -208,14 +210,11 @@ public class MedecinService {
                         / Math.max(casReference, 1.0)) * 100.0;
                 long varRounded = Math.round((0.60 * variationCa) + (0.40 * variationCas));
 
-                statutDynamique = controleService.determinerEtat(TypeControle.STATUT, varRounded);
-                if (statutDynamique == null) {
-                    if (varRounded > 20) statutDynamique = "PROGRESSION";
-                    else if (varRounded >= -10) statutDynamique = "ACTIF_STABLE";
-                    else if (varRounded >= -40) statutDynamique = "SURVEILLANCE";
-                    else if (varRounded >= -70) statutDynamique = "RETENTION";
-                    else statutDynamique = "SILENCE_CRITIQUE";
-                }
+                if (varRounded > 20) statutDynamique = "PROGRESSION";
+                else if (varRounded >= -10) statutDynamique = "ACTIF_STABLE";
+                else if (varRounded >= -40) statutDynamique = "SURVEILLANCE";
+                else if (varRounded >= -70) statutDynamique = "RETENTION";
+                else statutDynamique = "SILENCE_CRITIQUE";
             } else {
                 statutDynamique = "ACTIF_STABLE";
             }

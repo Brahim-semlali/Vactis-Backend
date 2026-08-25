@@ -297,11 +297,17 @@ public class ActivitePortefeuilleService {
     }
 
 
-    // Calcule le statut VACTIS d'un médecin à partir de la variation CA M / CA M-1
+        // Calcule le statut VACTIS avec la même variation mixte que le scoring médecin.
     private String calculerStatutComplet(
             Medecin m,
             Map<String, Long> caM,
             Map<String, Long> caMm1,
+            Map<String, Long> caMm2,
+            Map<String, Long> caMm3,
+            Map<String, Long> casM,
+            Map<String, Long> casMm1,
+            Map<String, Long> casMm2,
+            Map<String, Long> casMm3,
             Set<Long> actifHisto,
             Set<Long> onboardingIds
     ) {
@@ -311,14 +317,18 @@ public class ActivitePortefeuilleService {
 
         if (onboardingIds.contains(m.getId()) && caCurr > 0) return "onboarding";
         if (caCurr == 0) return actifHisto.contains(m.getId()) ? "a_reactiver" : "exclu";
-        if (caPrev == 0) return "actif_stable";
 
-        double ratio = (double) caCurr / (double) caPrev;
-        if (ratio < 0.30) return "silence_critique";
-        if (ratio < 0.60) return "retention";     // variation < -40%
-        if (ratio < 0.90) return "surveillance";   // variation entre -40% et -10% (ratio < 0.90)
-        if (ratio > 1.20) return "progression";    // variation > +20% (ratio > 1.20)
-        return "actif_stable";                     // variation entre -10% et +20% (0.90 <= ratio <= 1.20)
+        double caReference = average(caMm1, caMm2, caMm3, key);
+        double casReference = average(casMm1, casMm2, casMm3, key);
+        double variationCa = ((caCurr - caReference) / Math.max(caReference, 300.0)) * 100.0;
+        double variationCas = ((casM.getOrDefault(key, 0L) - casReference) / Math.max(casReference, 1.0)) * 100.0;
+        double variationMixte = (0.60 * variationCa) + (0.40 * variationCas);
+
+        if (variationMixte > 20.0) return "progression";
+        if (variationMixte >= -10.0) return "actif_stable";
+        if (variationMixte >= -40.0) return "surveillance";
+        if (variationMixte >= -70.0) return "retention";
+        return "silence_critique";
     }
 
     // Construit un MedecinStatutItem à partir d'un médecin et de ses valeurs M
@@ -339,14 +349,21 @@ public class ActivitePortefeuilleService {
     // Construit la map {medecinId → statut VACTIS} pour tous les médecins sur le mois ym
     // Méthode publique : réutilisée par ActiviteImpactService (Niveau 4) pour calculer statut avant/après
     public Map<Long, String> buildStatutMapForMonth(YearMonth ym, List<Medecin> medecins) {
+        if (medecins.isEmpty()) return new LinkedHashMap<>();
         Map<String, Long> caM   = buildCaMap(ym);
         Map<String, Long> caMm1 = buildCaMap(ym.minusMonths(1));
+        Map<String, Long> caMm2 = buildCaMap(ym.minusMonths(2));
+        Map<String, Long> caMm3 = buildCaMap(ym.minusMonths(3));
+        Map<String, Long> casM = buildCasMap(ym);
+        Map<String, Long> casMm1 = buildCasMap(ym.minusMonths(1));
+        Map<String, Long> casMm2 = buildCasMap(ym.minusMonths(2));
+        Map<String, Long> casMm3 = buildCasMap(ym.minusMonths(3));
         Set<Long> actifHisto    = buildHistoriqueActifIds(ym);
         Set<Long> onboarding    = buildOnboardingIds(ym, medecins);
 
         Map<Long, String> result = new LinkedHashMap<>();
         for (Medecin m : medecins) {
-            result.put(m.getId(), calculerStatutComplet(m, caM, caMm1, actifHisto, onboarding));
+            result.put(m.getId(), calculerStatutComplet(m, caM, caMm1, caMm2, caMm3, casM, casMm1, casMm2, casMm3, actifHisto, onboarding));
         }
         return result;
     }
@@ -360,11 +377,16 @@ public class ActivitePortefeuilleService {
         return map;
     }
 
+    private double average(Map<String, Long> first, Map<String, Long> second, Map<String, Long> third, String key) {
+        return (first.getOrDefault(key, 0L) + second.getOrDefault(key, 0L) + third.getOrDefault(key, 0L)) / 3.0;
+    }
+
     // Construit la map {idMedecin → nombre de cas} pour un mois donné
     private Map<String, Long> buildCasMap(YearMonth ym) {
         List<Object[]> rows = extractionDonneesRepository
                 .countCasByMedecinAndDateRange(ym.atDay(1), ym.atEndOfMonth());
         Map<String, Long> map = new HashMap<>();
+        if (rows == null) return map;
         for (Object[] row : rows) map.put(String.valueOf((Long) row[0]), ((Number) row[1]).longValue());
         return map;
     }

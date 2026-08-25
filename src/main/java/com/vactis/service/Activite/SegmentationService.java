@@ -68,7 +68,7 @@ public class SegmentationService {
 
         // 2. Calculer le CA max et le Nombre de cas max dans le portefeuille pour la normalisation
         double maxCa = medecins.stream()
-            .mapToDouble(m -> caMoyenParMedecin.getOrDefault(m.getId(), 0.0))
+            .mapToDouble(m -> valueFor(caParMois, moisCourant, m.getId()))
                 .max()
                 .orElse(0.0);
         if (maxCa <= 0) maxCa = 1.0;
@@ -87,19 +87,25 @@ public class SegmentationService {
         for (int i = 0; i < totalMedecins; i++) {
             Medecin m = medecinsTriesParCa.get(i);
             double performance = (totalMedecins == 1) ? 100.0 : ((double) i / (totalMedecins - 1)) * 100.0;
+            m.setRangPerformance(i + 1);
+            m.setTotalPortefeuillePerformance(totalMedecins);
             performanceMap.put(m.getId(), performance);
         }
 
         // 4. Calculer le Score de valeur et attribuer le segment pour chaque médecin
         for (Medecin m : medecins) {
-            // A. Potentiel (40%) : Note Terrain prioritaire > Note Input > Note neutre 3.0/5.0
+            // A. Potentiel (40%) : note terrain prioritaire > note saisie dans Médecins > note neutre
             double noteSur5 = 3.0;
-                Optional<RetourTerrain> dernierRetour = retourTerrainService.getDerniereVisite(m)
-                    .filter(retour -> retour.getStatutVisite() == StatutVisite.REALISEE);
+            Optional<RetourTerrain> dernierRetour = retourTerrainService.getDerniereVisite(m)
+                .filter(retour -> retour.getStatutVisite() == StatutVisite.REALISEE);
             if (dernierRetour.isPresent() && dernierRetour.get().getNote() != null) {
                 noteSur5 = dernierRetour.get().getNote();
+                m.setSourcePotentiel("NOTE_TERRAIN");
             } else if (m.getNoteInput() != null) {
                 noteSur5 = m.getNoteInput();
+                m.setSourcePotentiel("INPUT_PROFIL");
+            } else {
+                m.setSourcePotentiel("DEFAUT");
             }
             double potentielSur100 = Math.min(100.0, Math.max(0.0, (noteSur5 / 5.0) * 100.0));
             m.setPotentielSur100(potentielSur100);
@@ -129,12 +135,24 @@ public class SegmentationService {
             double caNormalise = (caPhys / maxCa) * 100.0;
             double casNormalise = (casPhys / maxCas) * 100.0;
             double poidsEconomique = (0.50 * caNormalise) + (0.50 * casNormalise);
+            m.setCaNormaliseSur100(round(caNormalise));
+            m.setVolumeNormaliseSur100(round(casNormalise));
+            m.setMaxCaPortefeuille(round(maxCa));
+            m.setMaxVolumePortefeuille(round(maxCas));
             m.setPoidsEcoSur100(poidsEconomique);
 
             List<LocalDate> datesMedecin = extractionDonneesRepository.findDatesReceptionByMedecinId(m.getId());
             int intervalleEffectif = calculateIntervalleEffectif(datesMedecin);
             m.setIntervalleEffectif(intervalleEffectif);
-            m.setFiabilite(datesMedecin.size() >= 3 ? "FIABLE" : datesMedecin.size() >= 2 ? "PARTIEL" : "NON_FIABLE");
+                long moisActifs = datesMedecin.stream()
+                    .map(YearMonth::from)
+                    .distinct()
+                    .count();
+                boolean ancienneteSuffisante = m.getDatePremiereCollaboration() != null
+                    && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(LocalDate.now());
+                m.setFiabilite(moisActifs >= 3 && ancienneteSuffisante
+                    ? "FIABLE"
+                    : moisActifs >= 2 ? "PARTIEL" : "NON_FIABLE");
             int joursSansActivite = calculateDaysSinceLastActivity(datesMedecin);
                 m.setJoursSansActivite(joursSansActivite);
             double scoreSilence = Math.min(100.0, (joursSansActivite / (double) intervalleEffectif) * 20.0);
@@ -163,10 +181,13 @@ public class SegmentationService {
 
             // E. Détermination du segment (via règles de la table controle ou fallback A/B/C/D)
             String segment;
-            if (scoreValeur >= 75.0) segment = "A";
-            else if (scoreValeur >= 60.0) segment = "B";
-            else if (scoreValeur >= 45.0) segment = "C";
-            else segment = "D";
+            segment = controleService.determinerEtatParScore(TypeControle.SEGEMENTS, scoreValeur);
+            if (segment == null) {
+                if (scoreValeur >= 75.0) segment = "A";
+                else if (scoreValeur >= 60.0) segment = "B";
+                else if (scoreValeur >= 45.0) segment = "C";
+                else segment = "D";
+            }
 
             m.setScoreValeur(scoreValeur);
             m.setSegment(segment);

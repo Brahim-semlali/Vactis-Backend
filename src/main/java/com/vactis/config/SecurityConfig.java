@@ -54,13 +54,21 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers(
-                            "/users/**",
-                            "/roles/**",
-                            "/api/admin/**",
+                            "/users/**"
+                        ).hasAuthority("MENU:/users")
+                        .requestMatchers(
+                            "/roles/**"
+                        ).hasAuthority("MENU:/roles")
+                        .requestMatchers(
+                            "/api/admin/**"
+                        ).hasAnyAuthority("MENU:/users", "MENU:/roles")
+                        .requestMatchers(
+                            "/api/controle/**"
+                        ).hasAuthority("MENU:/controle")
+                        .requestMatchers(
                             "/api/menu/AddMenu",
                             "/api/menu/Delete/**",
                             "/api/menu/Update/**",
-                            "/api/controle/**",
                             "/api/medecins/sync"
                         ).hasRole("ADMIN")
                         .anyRequest().authenticated()

@@ -41,7 +41,9 @@ public class ActiviteTerrainService {
         LocalDate start = ym.atDay(1);
         LocalDate end = ym.atEndOfMonth();
 
-        List<RetourTerrain> retours = retourTerrainRepository.findByDateVisiteBetween(start, end);
+        List<RetourTerrain> retours = retourTerrainRepository.findByDateVisiteBetween(start, end).stream()
+            .filter(r -> r.getAction() != null)
+            .collect(Collectors.toList());
         Long actionsCount = actionRepository.countByCycleMensuel(ym.format(YYYY_MM));
         long actionsGenerees = actionsCount != null ? actionsCount : 0L;
 

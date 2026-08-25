@@ -1,5 +1,6 @@
 package com.vactis.service.Activite;
 
+import com.vactis.model.action.Action;
 import com.vactis.model.medecin.QualificationVisite;
 import com.vactis.model.medecin.RetourTerrain;
 import com.vactis.model.medecin.StatutVisite;
@@ -48,7 +49,23 @@ class ActiviteTerrainServiceTest {
     @Test
     void statutNullEstTraiteCommeRealiseePourLesDonneesHistoriques() {
         RetourTerrain historique = retour(null, QualificationVisite.NON_RENSEIGNE, false, null);
+        historique.setAction(new Action());
         when(retourTerrainRepository.findByDateVisiteBetween(any(), any())).thenReturn(List.of(historique));
+
+        var response = terrainService.getActionsVactis("2026-05");
+
+        assertEquals(1L, response.getVisitesRenseignees());
+        assertEquals(1L, response.getVisitesRealisees());
+        assertEquals(100.0, response.getTauxTerrain());
+    }
+
+    @Test
+    void actionsVactisExclutLesVisitesLibres() {
+        RetourTerrain actionVactis = retour(StatutVisite.REALISEE, QualificationVisite.NON_RENSEIGNE, false, "Alice");
+        actionVactis.setAction(new Action());
+        RetourTerrain visiteLibre = retour(StatutVisite.REALISEE, QualificationVisite.NON_RENSEIGNE, false, "Bob");
+        when(retourTerrainRepository.findByDateVisiteBetween(any(), any())).thenReturn(List.of(actionVactis, visiteLibre));
+        when(actionRepository.countByCycleMensuel(any())).thenReturn(1L);
 
         var response = terrainService.getActionsVactis("2026-05");
 

@@ -34,7 +34,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     public UserDetails loadUserByUsername(String username)
             throws UsernameNotFoundException {
         log.debug("Chargement de l'utilisateur depuis la BDD : {}", username);
-        return userRepository.findByUsername(username)
+        return userRepository.findByUsernameWithRoleMenus(username)
                 .orElseThrow(() -> {
                     log.warn("Utilisateur non trouvé en BDD : {}", username);
                     return new UsernameNotFoundException(

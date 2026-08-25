@@ -53,23 +53,30 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     }
 
     private void initAdminUser() {
-        if (!userRepository.existsByUsername("admin")) {
+        Roles adminRole = roleRepository.findByNameRoleIgnoreCase("ADMIN")
+            .orElseThrow(() -> new IllegalStateException("Le rôle ADMIN n'existe pas"));
+        Users admin = userRepository.findByUsername("admin").orElse(null);
+
+        if (admin == null) {
             if (adminPassword == null || adminPassword.isBlank()) {
                 throw new IllegalStateException("VACTIS_ADMIN_PASSWORD doit être défini pour créer le compte admin");
             }
             log.info("Création du compte administrateur VACTIS par défaut...");
-            Users admin = new Users();
+            admin = new Users();
             admin.setUsername("admin");
             admin.setPassword(passwordEncoder.encode(adminPassword));
             admin.setFirstName("Admin");
             admin.setLastName("VACTIS");
             admin.setEmail("admin@vactis.local");
             admin.setPhone("0600000000");
-                admin.setRoles(roleRepository.findByNameRoleIgnoreCase("ADMIN")
-                    .orElseThrow(() -> new IllegalStateException("Le rôle ADMIN n'existe pas")));
             admin.setEnabled(true);
             admin.setAccountLocked(false);
             admin.setFailedLoginAttempts(0);
+        }
+
+        if (admin.getRoles() == null || !adminRole.getIdRole().equals(admin.getRoles().getIdRole())) {
+            log.info("Association du rôle ADMIN au compte administrateur existant");
+            admin.setRoles(adminRole);
             userRepository.save(admin);
         }
     }

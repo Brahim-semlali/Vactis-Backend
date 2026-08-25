@@ -68,6 +68,19 @@ class ActiviteServiceTest {
         assertEquals(10.0, response.getNonAffectesPct());
     }
 
+    @Test
+    void comparaisonUsesMetricFloorsForSmallReferences() {
+        when(extractionDonneesRepository.countCasByDateRange(any(), any()))
+                .thenAnswer(invocation -> casesForSmallReference(invocation.getArgument(0)));
+        when(extractionDonneesRepository.sumPrixAPayerByDateRange(any(), any()))
+                .thenAnswer(invocation -> caForSmallReference(invocation.getArgument(0)));
+
+        var response = activiteService.getComparaison("2026-05", null, 3);
+
+        assertEquals(33.0, response.getCa().getVariationVsRefPct());
+        assertEquals(100.0, response.getCas().getVariationVsRefPct());
+    }
+
     private Long casesFor(LocalDate start) {
         YearMonth month = YearMonth.from(start);
         return switch (month.toString()) {
@@ -88,5 +101,13 @@ class ActiviteServiceTest {
             case "2026-02" -> 87000L;
             default -> 0L;
         };
+    }
+
+    private Long casesForSmallReference(LocalDate start) {
+        return YearMonth.from(start).toString().equals("2026-05") ? 2L : 1L;
+    }
+
+    private Long caForSmallReference(LocalDate start) {
+        return YearMonth.from(start).toString().equals("2026-05") ? 100L : 1L;
     }
 }

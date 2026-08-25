@@ -7,6 +7,7 @@ import com.vactis.dto.action.ActionPageResponse;
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
 import com.vactis.model.action.UrgenceAction;
+import com.vactis.model.medecin.RisqueUrgence;
 import com.vactis.repository.ActionRepository;
 
 import com.vactis.service.Activite.SegmentationService;
@@ -198,8 +199,9 @@ public class ActionService {
                 // Ajuster l'action recommandée et l'urgence pour correspondre au statut du médecin
                 int joursSansActivite = calculateJoursSansActivite(m);
                 boolean silenceCritique = joursSansActivite > calculateFrequenceJours(m.getSegment())
-                        || "SILENCE_CRITIQUE".equals(statutMed);
-                if (silenceCritique || "SURVEILLANCE".equals(statutMed) || "RETENTION".equals(statutMed)) {
+                    || "SILENCE_CRITIQUE".equals(statutMed)
+                    || m.getRisqueUrgence() == RisqueUrgence.URGENT;
+                if (silenceCritique) {
                     if (!"visite urgence silence".equals(a.getActionRecommandee())
                             || a.getUrgence() != UrgenceAction.SILENCE_CRITIQUE
                             || !Boolean.TRUE.equals(a.getUrgenceSilence())) {
@@ -207,6 +209,14 @@ public class ActionService {
                         a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
                         a.setUrgenceSilence(true);
                         a.setCommentaire("Relance prioritaire suite à une baisse d'activité ou à un silence radio prolongé.");
+                        modifie = true;
+                    }
+                } else if (m.getRisqueUrgence() == RisqueUrgence.ELEVE || "RETENTION".equals(statutMed)) {
+                    if (!"visite urgence risque".equals(a.getActionRecommandee())) {
+                        a.setActionRecommandee("visite urgence risque");
+                        a.setUrgence(UrgenceAction.ELEVE);
+                        a.setUrgenceSilence(false);
+                        a.setCommentaire("Visite prioritaire selon le risque commercial calculé.");
                         modifie = true;
                     }
                 } else if ("PROGRESSION".equals(statutMed)) {
@@ -412,13 +422,13 @@ public class ActionService {
 
         String statutUpper = m.getStatut() != null ? m.getStatut().toUpperCase() : "ACTIF_STABLE";
         String explanationText = switch (statutUpper) {
-            case "PROGRESSION" -> "Statut calculé d'après une hausse significative de CA (> +20%) : PROGRESSION";
-            case "ACTIF_STABLE" -> "Statut calculé d'après la stabilité du CA (-10% à +20%) : ACTIF_STABLE";
-            case "SURVEILLANCE" -> "Statut calculé d'après une baisse modérée du CA (-10% à -40%) : SURVEILLANCE";
-            case "RETENTION" -> "Statut calculé d'après une baisse sévère du CA (-40% à -70%) : RETENTION";
-            case "SILENCE_CRITIQUE" -> "Statut calculé d'après une chute critique de CA ou un silence radio prolongé : SILENCE_CRITIQUE";
+            case "PROGRESSION" -> "Statut calculé d'après une variation mixte supérieure à +20% (60% CA, 40% volume) : PROGRESSION";
+            case "ACTIF_STABLE" -> "Statut calculé d'après une variation mixte entre -10% et +20% (60% CA, 40% volume) : ACTIF_STABLE";
+            case "SURVEILLANCE" -> "Statut calculé d'après une variation mixte entre -10% et -40% (60% CA, 40% volume) : SURVEILLANCE";
+            case "RETENTION" -> "Statut calculé d'après une variation mixte entre -40% et -70% (60% CA, 40% volume) : RETENTION";
+            case "SILENCE_CRITIQUE" -> "Statut calculé d'après une variation mixte inférieure à -70% ou un silence radio prolongé : SILENCE_CRITIQUE";
             case "ONBOARDING" -> "Médecin nouvellement intégré au portefeuille : ONBOARDING";
-            default -> "Statut calculé d'après la variation de CA : " + m.getStatut();
+            default -> "Statut calculé d'après la variation mixte CA/volume : " + m.getStatut();
         };
 
         FicheContextuelleResponse resp = new FicheContextuelleResponse();
