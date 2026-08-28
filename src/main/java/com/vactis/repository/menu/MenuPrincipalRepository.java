@@ -6,4 +6,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface MenuPrincipalRepository extends JpaRepository<MenuPrincipal, Long> {
+	java.util.Optional<MenuPrincipal> findByNomIgnoreCase(String nom);
 }

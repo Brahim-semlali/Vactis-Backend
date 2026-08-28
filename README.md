@@ -21,6 +21,7 @@
 - 📊 **Actions commerciales** — Suivi des visites, relances et états planifiés/réalisés
 - 📁 **Import Excel** — Synchronisation automatique depuis `data_fictif_test_vactis.xlsx`
 - ⚙️ **Règles de contrôle dynamiques** — Paramétrage des seuils CA par type (STATUT / SEGMENT)
+- 🔧 **Paramètres système** — Durée globale des tokens JWT et désactivation automatique des comptes inactifs
 - 🩺 **Actuator Health** — Endpoint `/actuator/health` pour la supervision
 - 📖 **Swagger UI** — Documentation API interactive disponible à `/swagger-ui.html`
 
@@ -40,6 +41,12 @@
 | Conteneurisation| Docker + Docker Compose     |
 | CI/CD           | GitHub Actions              |
 | Documentation   | SpringDoc OpenAPI (Swagger) |
+
+### Sécurité des sessions
+
+L'application est stateless (`SessionCreationPolicy.STATELESS`) et utilise des tokens JWT, pas des sessions HTTP. La durée du token est lue dans `system_settings.duree_session_minutes` au moment de chaque génération; la propriété `jwt.expiration` ne sert que de compatibilité aux tests isolés. Modifier un réglage ne révoque donc pas les tokens déjà émis : ils expirent selon leur date d'expiration initiale.
+
+Le champ `users.last_login_at` est renseigné après chaque connexion réussie. Une tâche Spring exécutée chaque jour à 02:00 désactive les comptes actifs dont cette date dépasse `duree_inactivite_jours`. La table `system_settings` est créée par Hibernate (`ddl-auto=update`) ou par `src/main/resources/system_settings_migration.sql` lors d'une migration manuelle.
 
 ---
 

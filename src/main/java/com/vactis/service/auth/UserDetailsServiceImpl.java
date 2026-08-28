@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Objects;
 import java.time.LocalDateTime;
 import jakarta.persistence.EntityNotFoundException;
+import com.vactis.model.system.SystemSettings;
+import com.vactis.service.system.SystemSettingsService;
 
 @Slf4j
 @Service
@@ -29,6 +31,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SystemSettingsService systemSettingsService;
 
     @Override
     public UserDetails loadUserByUsername(String username)
@@ -50,6 +53,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         if (request.password() == null || request.password().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le mot de passe est obligatoire");
         }
+        validatePassword(request.password());
         if (userRepository.existsByUsername(request.username())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le nom d'utilisateur est déjà utilisé");
         }
@@ -78,6 +82,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         });
         applyUserData(user, request);
         if (request.password() != null && !request.password().isBlank()) {
+            validatePassword(request.password());
             user.setPassword(passwordEncoder.encode(request.password()));
         }
         return userRepository.save(user);
@@ -139,6 +144,19 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         user.setRoles(role);
         userRepository.save(user);
+    }
+
+    private void validatePassword(String password) {
+        SystemSettings settings = systemSettingsService == null ? null : systemSettingsService.getSettings();
+        if (settings == null || password.length() < settings.getMdpLongueurMinimale()
+                || (settings.getMdpExigeMajuscule() && !password.matches(".*[A-Z].*"))
+                || (settings.getMdpExigeChiffre() && !password.matches(".*\\d.*"))
+                || (settings.getMdpExigeCaractereSpecial() && !password.matches(".*[^a-zA-Z0-9].*"))) {
+            if (settings == null) {
+                return;
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le mot de passe ne respecte pas la politique de sécurité configurée");
+        }
     }
 
 }

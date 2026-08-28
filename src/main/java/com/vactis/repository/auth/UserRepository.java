@@ -30,4 +30,6 @@ public interface UserRepository extends JpaRepository<Users, Long> {
 
     // Vérifie si une adresse email est déjà enregistrée
     boolean existsByEmail(String email);
+
+    java.util.List<Users> findByEnabledTrueAndAccountLockedFalse();
 }

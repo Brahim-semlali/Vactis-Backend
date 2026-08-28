@@ -79,7 +79,7 @@ public class Users implements UserDetails {
     private Roles roles;
 
     public LocalDateTime getLockEndTime() {
-        if (lockedAt == null || lockedUntil == null) {
+        if (lockedAt == null || lockedUntil == null || lockedUntil == 0) {
             return null;
         }
         return lockedAt.plusMinutes(lockedUntil);
@@ -114,6 +114,9 @@ public class Users implements UserDetails {
         if (!accountLocked) {
             return true;
         }
+        if (lockedUntil == null || lockedUntil == 0) {
+            return false;
+        }
         LocalDateTime endTime = getLockEndTime();
         if (endTime == null) {
             return false;
@@ -123,6 +126,9 @@ public class Users implements UserDetails {
 
     public boolean isSuspended() {
         if (!accountLocked) {
+            return false;
+        }
+        if (lockedUntil == null || lockedUntil == 0) {
             return false;
         }
         LocalDateTime endTime = getLockEndTime();

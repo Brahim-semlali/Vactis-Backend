@@ -60,6 +60,9 @@ public class SecurityConfig {
                             "/roles/**"
                         ).hasAuthority("MENU:/roles")
                         .requestMatchers(
+                            "/api/admin/settings/**"
+                        ).hasAuthority("MENU:/parametres-systeme")
+                        .requestMatchers(
                             "/api/admin/**"
                         ).hasAnyAuthority("MENU:/users", "MENU:/roles")
                         .requestMatchers(

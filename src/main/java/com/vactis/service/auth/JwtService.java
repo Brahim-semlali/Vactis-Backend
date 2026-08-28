@@ -1,5 +1,6 @@
 package com.vactis.service.auth;
 
+import com.vactis.service.system.SystemSettingsService;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -7,6 +8,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -19,18 +21,24 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
+    @Autowired
+    private SystemSettingsService systemSettingsService;
+    @Value("${jwt.expiration:86400000}")
+    private long expiration;
+
+
     @Value("${jwt.secret}")
     private String secretKey;
-
-    @Value("${jwt.expiration}")
-    private long expiration;
 
     public String generateToken(UserDetails userDetails) {
         log.debug("Génération du token JWT pour : {}", userDetails.getUsername());
         return Jwts.builder()
                 .setSubject(userDetails.getUsername())
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + expiration))
+                .setExpiration(new Date(System.currentTimeMillis()
+                    + (systemSettingsService == null
+                        ? expiration
+                        : systemSettingsService.getSettings().getDureeSessionMinutes() * 60_000L)))
                 .signWith(getSignKey(), SignatureAlgorithm.HS256)
                 .compact();
     }

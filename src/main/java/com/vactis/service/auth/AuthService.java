@@ -10,6 +10,9 @@ import com.vactis.model.Roles.Roles;
 import com.vactis.model.auth.Users;
 import com.vactis.repository.RoleRepository;
 import com.vactis.repository.auth.UserRepository;
+import com.vactis.model.system.SystemSettings;
+import com.vactis.service.system.ConnexionLogService;
+import com.vactis.service.system.SystemSettingsService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +23,12 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -35,8 +41,11 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final SystemSettingsService systemSettingsService;
+    private final ConnexionLogService connexionLogService;
 
     public AuthResponse register(RegisterRequest request) {
+        validatePassword(request.password(), currentSystemSettings());
         if (userRepository.existsByUsername(request.username())) {
             log.warn("[AUTH] Inscription refusée | username={} | raison=username_deja_utilise", request.username());
             throw AuthException.usernameTaken();
@@ -68,7 +77,12 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
+        return login(request, null);
+    }
+
+    public AuthResponse login(LoginRequest request, String ipAddress) {
         AuthSettings settings = authSettingsService.getSettings();
+        SystemSettings systemSettings = currentSystemSettings();
         String username = request.username();
 
         log.info("[AUTH] Tentative connexion | username={} | maxTentatives={} | dureeSuspensionMin={}",
@@ -76,6 +90,7 @@ public class AuthService {
 
         Users user = userRepository.findByUsername(username)
                 .orElseThrow(() -> {
+                    logAttempt(null, false, ipAddress);
                     log.warn("[AUTH] Échec connexion | username={} | raison=utilisateur_inconnu", username);
                     return AuthException.badCredentials(null, null);
                 });
@@ -83,16 +98,19 @@ public class AuthService {
         releaseExpiredLock(user);
 
         if (user.isAccountLocked() && user.getLockedAt() == null) {
+            logAttempt(user, false, ipAddress);
             log.warn("[AUTH] Connexion refusée | username={} | raison=compte_bloque", username);
             throw AuthException.accountLocked(null, null, settings.getMaxFailedAttempts());
         }
 
         if (!user.isEnabled()) {
+            logAttempt(user, false, ipAddress);
             log.warn("[AUTH] Connexion refusée | username={} | raison=compte_desactive", username);
             throw AuthException.accountDisabled();
         }
 
         if (user.isSuspended()) {
+            logAttempt(user, false, ipAddress);
             log.warn("[AUTH] Connexion refusée | username={} | raison=compte_suspendu | minutes={} | fin={} | tentatives={}",
                     username, user.getLockedUntil(), user.getLockEndTime(), user.getFailedLoginAttempts());
             throw AuthException.accountLocked(user.getLockEndTime(), user.getLockedUntil(), settings.getMaxFailedAttempts());
@@ -102,19 +120,23 @@ public class AuthService {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(username, request.password()));
         } catch (BadCredentialsException e) {
-            throw handleFailedLogin(user, settings);
+            logAttempt(user, false, ipAddress);
+            throw handleFailedLogin(user, settings, systemSettings);
         } catch (LockedException e) {
+            logAttempt(user, false, ipAddress);
             log.warn("[AUTH] Connexion refusée | username={} | raison=spring_locked", username);
             throw AuthException.accountLocked(
                     user.getLockEndTime(),
                     user.getLockedUntil(),
                     settings.getMaxFailedAttempts());
         } catch (DisabledException e) {
+            logAttempt(user, false, ipAddress);
             log.warn("[AUTH] Connexion refusée | username={} | raison=spring_disabled", username);
             throw AuthException.accountDisabled();
         }
 
         handleSuccessfulLogin(user);
+        logAttempt(user, true, ipAddress);
         log.info("[AUTH] Connexion réussie | username={} | userId={}", username, user.getId());
         return new AuthResponse(jwtService.generateToken(user));
     }
@@ -123,6 +145,7 @@ public class AuthService {
         if (user.isAccountLocked()
             && user.getLockedAt() != null
             && user.getLockedUntil() != null
+            && user.getLockedUntil() > 0
             && !user.isSuspended()) {
             user.setAccountLocked(false);
             user.setLockedAt(null);
@@ -133,17 +156,20 @@ public class AuthService {
         }
     }
 
-    private AuthException handleFailedLogin(Users user, AuthSettings settings) {
+    private AuthException handleFailedLogin(Users user, AuthSettings settings, SystemSettings systemSettings) {
         Users freshUser = userRepository.findById(user.getId()).orElse(user);
-        int maxAttempts = settings.getMaxFailedAttempts();
-        int lockMinutes = settings.getLockDurationMinutes();
+        int maxAttempts = systemSettings == null ? settings.getMaxFailedAttempts() : systemSettings.getMaxTentativesConnexion();
+        int lockMinutes = systemSettings == null ? settings.getLockDurationMinutes() : systemSettings.getDureeBlocageMinutes();
         int attempts = freshUser.getFailedLoginAttempts() + 1;
         freshUser.setFailedLoginAttempts(attempts);
 
         if (attempts >= maxAttempts) {
             freshUser.setAccountLocked(true);
             freshUser.setLockedAt(LocalDateTime.now());
-            freshUser.setLockedUntil(lockMinutes);
+            freshUser.setLockedUntil(lockMinutes == 0 ? null : lockMinutes);
+            if (lockMinutes == 0) {
+                freshUser.setLockedAt(null);
+            }
             userRepository.saveAndFlush(freshUser);
             log.warn("[AUTH] Compte suspendu | username={} | tentatives={}/{} | dureeMin={} | fin={}",
                     freshUser.getUsername(), attempts, maxAttempts, lockMinutes, freshUser.getLockEndTime());
@@ -159,7 +185,8 @@ public class AuthService {
 
     public AccountStatusResponse getAccountStatus(String username) {
         AuthSettings settings = authSettingsService.getSettings();
-        int maxAttempts = settings.getMaxFailedAttempts();
+        SystemSettings systemSettings = currentSystemSettings();
+        int maxAttempts = systemSettings == null ? settings.getMaxFailedAttempts() : systemSettings.getMaxTentativesConnexion();
 
         return userRepository.findByUsername(username)
                 .map(user -> {
@@ -193,5 +220,31 @@ public class AuthService {
         user.setLockedUntil(null);
         user.setLastLoginAt(LocalDateTime.now());
         userRepository.saveAndFlush(user);
+    }
+
+    private SystemSettings currentSystemSettings() {
+        return systemSettingsService == null ? null : systemSettingsService.getSettings();
+    }
+
+    private void logAttempt(Users user, boolean success, String ipAddress) {
+        if (connexionLogService != null) {
+            connexionLogService.logAttempt(user, success, ipAddress);
+        }
+    }
+
+    public Optional<Long> findUserId(String username) {
+        return userRepository.findByUsername(username).map(Users::getId);
+    }
+
+    private static void validatePassword(String password, SystemSettings settings) {
+        if (settings == null) {
+            return;
+        }
+        if (password == null || password.length() < settings.getMdpLongueurMinimale()
+                || (settings.getMdpExigeMajuscule() && !password.matches(".*[A-Z].*"))
+                || (settings.getMdpExigeChiffre() && !password.matches(".*\\d.*"))
+                || (settings.getMdpExigeCaractereSpecial() && !password.matches(".*[^a-zA-Z0-9].*"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le mot de passe ne respecte pas la politique de sécurité configurée");
+        }
     }
 }

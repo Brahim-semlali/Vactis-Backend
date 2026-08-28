@@ -8,6 +8,7 @@ import com.vactis.model.menu.MenuItem;
 import com.vactis.repository.auth.AuthSettingsRepository;
 import com.vactis.repository.auth.UserRepository;
 import com.vactis.repository.menu.MenuItemRepository;
+import com.vactis.repository.menu.MenuPrincipalRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import com.vactis.model.system.SystemSettings;
+import com.vactis.repository.system.SystemSettingsRepository;
 
 import java.util.List;
 
@@ -30,6 +33,8 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     private final AuthSettingsRepository authSettingsRepository;
     private final MenuItemRepository menuItemRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SystemSettingsRepository systemSettingsRepository;
+    private final MenuPrincipalRepository menuPrincipalRepository;
 
     @Value("${VACTIS_ADMIN_PASSWORD:}")
     private String adminPassword;
@@ -37,9 +42,14 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) {
         initAuthSettings();
+        initSystemSettings();
         initMenuItems();
         initRoles();
         initAdminUser();
+    }
+
+    private void initSystemSettings() {
+        systemSettingsRepository.findFirstOrCreateDefault();
     }
 
     private void initAuthSettings() {
@@ -139,6 +149,12 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
 
         ensureMenuItem("Rôles", "roles", "/roles", 15);
         ensureMenuItem("Users", "users", "/users", 16);
+        ensureMenuItem("Paramètres système", "settings", "/parametres-systeme", 17);
+        menuItemRepository.findByRoute("/parametres-systeme").ifPresent(settingsMenu ->
+            menuPrincipalRepository.findByNomIgnoreCase("Administration").ifPresent(administration -> {
+                settingsMenu.setMenuPrincipal(administration);
+                menuItemRepository.save(settingsMenu);
+            }));
     }
 
     private void ensureMenuItem(String label, String icon, String route, int order) {
