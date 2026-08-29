@@ -42,7 +42,6 @@ public class SystemSettingsService {
         settings.setMdpExigeMajuscule(request.mdpExigeMajuscule());
         settings.setMdpExigeChiffre(request.mdpExigeChiffre());
         settings.setMdpExigeCaractereSpecial(request.mdpExigeCaractereSpecial());
-        settings.setMdpExpirationJours(request.mdpExpirationJours());
         settings.setMaxTentativesConnexion(request.maxTentativesConnexion());
         settings.setDureeBlocageMinutes(request.dureeBlocageMinutes());
         settings.setJournalConnexionActif(request.journalConnexionActif());
@@ -55,7 +54,6 @@ public class SystemSettingsService {
         if (request == null || request.dureeSessionMinutes() == null || request.dureeSessionMinutes() <= 0
                 || request.dureeInactiviteJours() == null || request.dureeInactiviteJours() <= 0
                 || request.mdpLongueurMinimale() == null || request.mdpLongueurMinimale() <= 0
-                || request.mdpExpirationJours() == null || request.mdpExpirationJours() < 0
                 || request.maxTentativesConnexion() == null || request.maxTentativesConnexion() <= 0
                 || request.dureeBlocageMinutes() == null || request.dureeBlocageMinutes() < 0
                 || request.mdpExigeMajuscule() == null || request.mdpExigeChiffre() == null
@@ -72,7 +70,6 @@ public class SystemSettingsService {
                 settings.getMdpExigeMajuscule(),
                 settings.getMdpExigeChiffre(),
                 settings.getMdpExigeCaractereSpecial(),
-                settings.getMdpExpirationJours(),
                 settings.getMaxTentativesConnexion(),
                 settings.getDureeBlocageMinutes(),
                 settings.getJournalConnexionActif(),

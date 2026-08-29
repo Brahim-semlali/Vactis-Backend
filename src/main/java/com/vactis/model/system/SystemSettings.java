@@ -45,9 +45,6 @@ public class SystemSettings {
     @Column(name = "mdp_exige_caractere_special")
     private Boolean mdpExigeCaractereSpecial = false;
 
-    @Column(name = "mdp_expiration_jours")
-    private Integer mdpExpirationJours = 0;
-
     @Column(name = "max_tentatives_connexion")
     private Integer maxTentativesConnexion = 5;
 
@@ -69,7 +66,7 @@ public class SystemSettings {
     @PreUpdate
     void validate() {
         if (dureeSessionMinutes == null || dureeSessionMinutes <= 0 || dureeInactiviteJours == null || dureeInactiviteJours <= 0
-                || mdpLongueurMinimale == null || mdpLongueurMinimale <= 0 || mdpExpirationJours == null || mdpExpirationJours < 0
+                || mdpLongueurMinimale == null || mdpLongueurMinimale <= 0
                 || maxTentativesConnexion == null || maxTentativesConnexion <= 0 || dureeBlocageMinutes == null || dureeBlocageMinutes < 0
                 || mdpExigeMajuscule == null || mdpExigeChiffre == null || mdpExigeCaractereSpecial == null || journalConnexionActif == null) {
             throw new IllegalArgumentException("Les paramètres doivent respecter des valeurs positives; les expirations et blocages peuvent être à zéro");

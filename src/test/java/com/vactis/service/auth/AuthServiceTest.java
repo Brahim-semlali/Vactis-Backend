@@ -3,6 +3,10 @@ package com.vactis.service.auth;
 import com.vactis.dto.auth.RegisterRequest;
 import com.vactis.model.Roles.Roles;
 import com.vactis.model.auth.Users;
+import com.vactis.model.system.SystemSettings;
+import com.vactis.dto.auth.ChangePasswordRequest;
+import com.vactis.service.system.ConnexionLogService;
+import com.vactis.service.system.SystemSettingsService;
 import com.vactis.repository.RoleRepository;
 import com.vactis.repository.auth.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -26,6 +30,8 @@ class AuthServiceTest {
     @Mock private JwtService jwtService;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private org.springframework.security.authentication.AuthenticationManager authenticationManager;
+    @Mock private SystemSettingsService systemSettingsService;
+    @Mock private ConnexionLogService connexionLogService;
 
     @InjectMocks private AuthService authService;
 
@@ -53,5 +59,37 @@ class AuthServiceTest {
 
         assertThrows(RuntimeException.class, () -> authService.register(request));
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void changePasswordRejectsIncorrectCurrentPassword() {
+        Users user = new Users();
+        user.setUsername("alice");
+        user.setPassword("encoded-old");
+        when(userRepository.findByUsername("alice")).thenReturn(java.util.Optional.of(user));
+        when(passwordEncoder.matches("wrong", "encoded-old")).thenReturn(false);
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> authService.changePassword("alice", new ChangePasswordRequest("wrong", "Newpass1!")));
+        verify(userRepository, never()).save(any(Users.class));
+    }
+
+    @Test
+    void changePasswordUsesConfiguredPolicy() {
+        Users user = new Users();
+        user.setUsername("alice");
+        user.setPassword("encoded-old");
+        SystemSettings settings = new SystemSettings();
+        settings.setMdpLongueurMinimale(10);
+        settings.setMdpExigeMajuscule(true);
+        settings.setMdpExigeChiffre(true);
+        settings.setMdpExigeCaractereSpecial(true);
+        when(userRepository.findByUsername("alice")).thenReturn(java.util.Optional.of(user));
+        when(passwordEncoder.matches("old", "encoded-old")).thenReturn(true);
+        when(systemSettingsService.getSettings()).thenReturn(settings);
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> authService.changePassword("alice", new ChangePasswordRequest("old", "weak")));
+        verify(userRepository, never()).save(any(Users.class));
     }
 }

@@ -9,7 +9,6 @@ public record SystemSettingsResponse(
         Boolean mdpExigeMajuscule,
         Boolean mdpExigeChiffre,
         Boolean mdpExigeCaractereSpecial,
-        Integer mdpExpirationJours,
         Integer maxTentativesConnexion,
         Integer dureeBlocageMinutes,
         Boolean journalConnexionActif,

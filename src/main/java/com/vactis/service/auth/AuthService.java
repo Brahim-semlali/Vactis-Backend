@@ -4,6 +4,7 @@ import com.vactis.dto.auth.AccountStatusResponse;
 import com.vactis.dto.auth.AuthResponse;
 import com.vactis.dto.auth.LoginRequest;
 import com.vactis.dto.auth.RegisterRequest;
+import com.vactis.dto.auth.ChangePasswordRequest;
 import com.vactis.exception.AuthException;
 import com.vactis.model.auth.AuthSettings;
 import com.vactis.model.Roles.Roles;
@@ -234,6 +235,17 @@ public class AuthService {
 
     public Optional<Long> findUserId(String username) {
         return userRepository.findByUsername(username).map(Users::getId);
+    }
+
+    public void changePassword(String username, ChangePasswordRequest request) {
+        Users user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilisateur introuvable"));
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le mot de passe actuel est incorrect");
+        }
+        validatePassword(request.newPassword(), currentSystemSettings());
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
     }
 
     private static void validatePassword(String password, SystemSettings settings) {

@@ -17,7 +17,6 @@ public interface SystemSettingsRepository extends JpaRepository<SystemSettings, 
             if (settings.getMdpExigeMajuscule() == null) settings.setMdpExigeMajuscule(false);
             if (settings.getMdpExigeChiffre() == null) settings.setMdpExigeChiffre(false);
             if (settings.getMdpExigeCaractereSpecial() == null) settings.setMdpExigeCaractereSpecial(false);
-            if (settings.getMdpExpirationJours() == null) settings.setMdpExpirationJours(0);
             if (settings.getMaxTentativesConnexion() == null) settings.setMaxTentativesConnexion(5);
             if (settings.getDureeBlocageMinutes() == null) settings.setDureeBlocageMinutes(15);
             if (settings.getJournalConnexionActif() == null) settings.setJournalConnexionActif(true);

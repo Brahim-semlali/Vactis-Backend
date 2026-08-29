@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS system_settings (
     mdp_exige_majuscules BOOLEAN NOT NULL DEFAULT FALSE,
     mdp_exige_chiffre BOOLEAN NOT NULL DEFAULT FALSE,
     mdp_exige_caractere_special BOOLEAN NOT NULL DEFAULT FALSE,
-    mdp_expiration_jours INTEGER NOT NULL DEFAULT 0 CHECK (mdp_expiration_jours >= 0),
     max_tentatives_connexion INTEGER NOT NULL DEFAULT 5 CHECK (max_tentatives_connexion > 0),
     duree_blocage_minutes INTEGER NOT NULL DEFAULT 15 CHECK (duree_blocage_minutes >= 0),
     journal_connexion_actif BOOLEAN NOT NULL DEFAULT TRUE,
@@ -22,7 +21,6 @@ ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS mdp_longueur_minimale INTEG
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS mdp_exige_majuscules BOOLEAN;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS mdp_exige_chiffre BOOLEAN;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS mdp_exige_caractere_special BOOLEAN;
-ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS mdp_expiration_jours INTEGER;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS max_tentatives_connexion INTEGER;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS duree_blocage_minutes INTEGER;
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS journal_connexion_actif BOOLEAN;
@@ -30,7 +28,7 @@ ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS journal_connexion_actif BOO
 UPDATE system_settings SET duree_session_minutes = COALESCE(duree_session_minutes, 60),
     duree_inactivite_jours = COALESCE(duree_inactivite_jours, 90), mdp_longueur_minimale = COALESCE(mdp_longueur_minimale, 8),
     mdp_exige_majuscules = COALESCE(mdp_exige_majuscules, FALSE), mdp_exige_chiffre = COALESCE(mdp_exige_chiffre, FALSE),
-    mdp_exige_caractere_special = COALESCE(mdp_exige_caractere_special, FALSE), mdp_expiration_jours = COALESCE(mdp_expiration_jours, 0),
+    mdp_exige_caractere_special = COALESCE(mdp_exige_caractere_special, FALSE),
     max_tentatives_connexion = COALESCE(max_tentatives_connexion, 5), duree_blocage_minutes = COALESCE(duree_blocage_minutes, 15),
     journal_connexion_actif = COALESCE(journal_connexion_actif, TRUE);
 
@@ -40,7 +38,6 @@ ALTER TABLE system_settings ALTER COLUMN mdp_longueur_minimale SET NOT NULL;
 ALTER TABLE system_settings ALTER COLUMN mdp_exige_majuscules SET NOT NULL;
 ALTER TABLE system_settings ALTER COLUMN mdp_exige_chiffre SET NOT NULL;
 ALTER TABLE system_settings ALTER COLUMN mdp_exige_caractere_special SET NOT NULL;
-ALTER TABLE system_settings ALTER COLUMN mdp_expiration_jours SET NOT NULL;
 ALTER TABLE system_settings ALTER COLUMN max_tentatives_connexion SET NOT NULL;
 ALTER TABLE system_settings ALTER COLUMN duree_blocage_minutes SET NOT NULL;
 ALTER TABLE system_settings ALTER COLUMN journal_connexion_actif SET NOT NULL;
@@ -48,6 +45,8 @@ ALTER TABLE system_settings ALTER COLUMN journal_connexion_actif SET NOT NULL;
 INSERT INTO system_settings (duree_session_minutes, duree_inactivite_jours, updated_at)
 SELECT 60, 90, 8, FALSE, FALSE, FALSE, 0, 5, 15, TRUE, CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM system_settings);
+
+ALTER TABLE system_settings DROP COLUMN IF EXISTS mdp_expiration_jours;
 
 CREATE TABLE IF NOT EXISTS connexion_logs (
     id BIGSERIAL PRIMARY KEY,

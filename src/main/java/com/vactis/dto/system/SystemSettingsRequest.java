@@ -16,7 +16,6 @@ public record SystemSettingsRequest(
         @NotNull Boolean mdpExigeMajuscule,
         @NotNull Boolean mdpExigeChiffre,
         @NotNull Boolean mdpExigeCaractereSpecial,
-        @NotNull @jakarta.validation.constraints.PositiveOrZero Integer mdpExpirationJours,
         @NotNull @Positive Integer maxTentativesConnexion,
         @NotNull @jakarta.validation.constraints.PositiveOrZero Integer dureeBlocageMinutes,
         @NotNull Boolean journalConnexionActif

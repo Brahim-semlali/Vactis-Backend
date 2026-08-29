@@ -4,6 +4,7 @@ import com.vactis.dto.auth.AccountStatusResponse;
 import com.vactis.dto.auth.AuthResponse;
 import com.vactis.dto.auth.LoginRequest;
 import com.vactis.dto.auth.RegisterRequest;
+import com.vactis.dto.auth.ChangePasswordRequest;
 import com.vactis.service.auth.AuthService;
 
 import jakarta.validation.Valid;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
 import com.vactis.service.system.ConnexionLogService;
+import com.vactis.service.system.SystemSettingsService;
 import org.springframework.security.core.Authentication;
 
 // Contrôleur REST d'authentification : inscription, connexion et vérification de l'état du compte
@@ -28,6 +30,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final ConnexionLogService connexionLogService;
+    private final SystemSettingsService systemSettingsService;
 
     // Inscrit un nouvel utilisateur et retourne un token JWT
     @PostMapping("/register")
@@ -56,5 +59,15 @@ public class AuthController {
         if (authentication != null) {
             authService.findUserId(authentication.getName()).ifPresent(connexionLogService::closeLatestLog);
         }
+    }
+
+    @PostMapping("/change-password")
+    public void changePassword(Authentication authentication, @Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(authentication.getName(), request);
+    }
+
+    @GetMapping("/password-policy")
+    public com.vactis.dto.system.SystemSettingsResponse passwordPolicy() {
+        return systemSettingsService.getSettingsResponse();
     }
 }
