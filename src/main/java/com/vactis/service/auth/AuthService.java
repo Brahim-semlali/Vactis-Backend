@@ -5,6 +5,8 @@ import com.vactis.dto.auth.AuthResponse;
 import com.vactis.dto.auth.LoginRequest;
 import com.vactis.dto.auth.RegisterRequest;
 import com.vactis.dto.auth.ChangePasswordRequest;
+import com.vactis.dto.auth.UpdateProfileRequest;
+import com.vactis.dto.auth.UserProfileResponse;
 import com.vactis.exception.AuthException;
 import com.vactis.model.auth.AuthSettings;
 import com.vactis.model.Roles.Roles;
@@ -235,6 +237,69 @@ public class AuthService {
 
     public Optional<Long> findUserId(String username) {
         return userRepository.findByUsername(username).map(Users::getId);
+    }
+
+    public UserProfileResponse getProfile(String username) {
+        if (username == null || username.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Nom d'utilisateur manquant");
+        }
+        Users user = userRepository.findByUsernameWithRoleMenus(username)
+                .or(() -> userRepository.findByUsername(username))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilisateur introuvable"));
+        String roleName = user.getRoles() != null && user.getRoles().getNameRole() != null
+                ? user.getRoles().getNameRole()
+                : "Directeur";
+        return new UserProfileResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail(),
+                user.getPhone(),
+                user.getAvatar(),
+                roleName
+        );
+    }
+
+    public UserProfileResponse updateProfile(String username, UpdateProfileRequest request) {
+        Users user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilisateur introuvable"));
+
+        if (request.email() != null && !request.email().isBlank()
+                && !request.email().equalsIgnoreCase(user.getEmail())) {
+            if (userRepository.existsByEmail(request.email())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cet email est déjà utilisé par un autre compte");
+            }
+            user.setEmail(request.email());
+        }
+
+        if (request.firstName() != null) {
+            user.setFirstName(request.firstName());
+        }
+        if (request.lastName() != null) {
+            user.setLastName(request.lastName());
+        }
+        if (request.phone() != null) {
+            user.setPhone(request.phone());
+        }
+        if (request.avatar() != null) {
+            user.setAvatar(request.avatar());
+        }
+
+        userRepository.save(user);
+        log.info("[AUTH] Profil mis à jour pour l'utilisateur {}", username);
+
+        String roleName = user.getRoles() != null ? user.getRoles().getNameRole() : "USER";
+        return new UserProfileResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail(),
+                user.getPhone(),
+                user.getAvatar(),
+                roleName
+        );
     }
 
     public void changePassword(String username, ChangePasswordRequest request) {

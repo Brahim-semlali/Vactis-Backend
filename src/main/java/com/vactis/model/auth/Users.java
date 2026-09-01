@@ -47,6 +47,9 @@ public class Users implements UserDetails {
 
     private String phone;
 
+    @Column(name = "avatar", columnDefinition = "TEXT")
+    private String avatar;
+
     @Column(nullable = false)
     private boolean enabled = true;
 

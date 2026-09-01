@@ -1,6 +1,8 @@
 package com.vactis.service.auth;
 
 import com.vactis.dto.auth.RegisterRequest;
+import com.vactis.dto.auth.UpdateProfileRequest;
+import com.vactis.dto.auth.UserProfileResponse;
 import com.vactis.model.Roles.Roles;
 import com.vactis.model.auth.Users;
 import com.vactis.model.system.SystemSettings;
@@ -91,5 +93,59 @@ class AuthServiceTest {
         assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> authService.changePassword("alice", new ChangePasswordRequest("old", "weak")));
         verify(userRepository, never()).save(any(Users.class));
+    }
+
+    @Test
+    void getProfileReturnsUserDetails() {
+        Users user = new Users();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setFirstName("Alice");
+        user.setLastName("Martin");
+        user.setEmail("alice@test.local");
+        user.setPhone("0600000000");
+        user.setAvatar("data:image/png;base64,sample");
+        Roles role = new Roles();
+        role.setNameRole("ADMIN");
+        user.setRoles(role);
+
+        when(userRepository.findByUsername("alice")).thenReturn(java.util.Optional.of(user));
+
+        UserProfileResponse profile = authService.getProfile("alice");
+
+        assertEquals("alice", profile.username());
+        assertEquals("Alice", profile.firstName());
+        assertEquals("Martin", profile.lastName());
+        assertEquals("alice@test.local", profile.email());
+        assertEquals("0600000000", profile.phone());
+        assertEquals("data:image/png;base64,sample", profile.avatar());
+        assertEquals("ADMIN", profile.role());
+    }
+
+    @Test
+    void updateProfileUpdatesFieldsAndSaves() {
+        Users user = new Users();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setFirstName("Alice");
+        user.setLastName("Martin");
+        user.setEmail("alice@test.local");
+        user.setPhone("0600000000");
+        Roles role = new Roles();
+        role.setNameRole("USER");
+        user.setRoles(role);
+
+        when(userRepository.findByUsername("alice")).thenReturn(java.util.Optional.of(user));
+        when(userRepository.existsByEmail("alice.new@test.local")).thenReturn(false);
+
+        UpdateProfileRequest request = new UpdateProfileRequest("Alicia", "Dupont", "alice.new@test.local", "0700000000", "data:image/png;base64,newavatar");
+        UserProfileResponse updated = authService.updateProfile("alice", request);
+
+        assertEquals("Alicia", updated.firstName());
+        assertEquals("Dupont", updated.lastName());
+        assertEquals("alice.new@test.local", updated.email());
+        assertEquals("0700000000", updated.phone());
+        assertEquals("data:image/png;base64,newavatar", updated.avatar());
+        verify(userRepository).save(user);
     }
 }

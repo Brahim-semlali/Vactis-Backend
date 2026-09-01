@@ -5,6 +5,8 @@ import com.vactis.dto.auth.AuthResponse;
 import com.vactis.dto.auth.LoginRequest;
 import com.vactis.dto.auth.RegisterRequest;
 import com.vactis.dto.auth.ChangePasswordRequest;
+import com.vactis.dto.auth.UpdateProfileRequest;
+import com.vactis.dto.auth.UserProfileResponse;
 import com.vactis.service.auth.AuthService;
 
 import jakarta.validation.Valid;
@@ -12,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -59,6 +62,26 @@ public class AuthController {
         if (authentication != null) {
             authService.findUserId(authentication.getName()).ifPresent(connexionLogService::closeLatestLog);
         }
+    }
+
+    @GetMapping("/profile")
+    public UserProfileResponse getProfile(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED, "Utilisateur non authentifié");
+        }
+        log.info("[AUTH-API] GET /profile | username={}", authentication.getName());
+        return authService.getProfile(authentication.getName());
+    }
+
+    @PutMapping("/profile")
+    public UserProfileResponse updateProfile(Authentication authentication, @Valid @RequestBody UpdateProfileRequest request) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED, "Utilisateur non authentifié");
+        }
+        log.info("[AUTH-API] PUT /profile | username={}", authentication.getName());
+        return authService.updateProfile(authentication.getName(), request);
     }
 
     @PostMapping("/change-password")
