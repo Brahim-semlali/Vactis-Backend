@@ -44,7 +44,7 @@
 
 ### Sécurité des sessions
 
-L'application est stateless (`SessionCreationPolicy.STATELESS`) et utilise des tokens JWT, pas des sessions HTTP. La durée du token est lue dans `system_settings.duree_session_minutes` au moment de chaque génération; la propriété `jwt.expiration` ne sert que de compatibilité aux tests isolés. Modifier un réglage ne révoque donc pas les tokens déjà émis : ils expirent selon leur date d'expiration initiale.
+L'application est stateless (`SessionCreationPolicy.STATELESS`) et utilise des tokens JWT, pas des sessions HTTP. La durée du token est lue dans `system_settings.duree_session_minutes` au moment de chaque génération et vérifiée à chaque requête; la propriété `jwt.expiration` ne sert que de compatibilité aux tests isolés. Réduire la durée invalide donc les tokens déjà émis dès qu'ils dépassent la nouvelle limite.
 
 Le champ `users.last_login_at` est renseigné après chaque connexion réussie. Une tâche Spring exécutée chaque jour à 02:00 désactive les comptes actifs dont cette date dépasse `duree_inactivite_jours`. La table `system_settings` est créée par Hibernate (`ddl-auto=update`) ou par `src/main/resources/system_settings_migration.sql` lors d'une migration manuelle.
 

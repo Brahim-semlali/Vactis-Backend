@@ -56,7 +56,22 @@ public class JwtService {
     }
 
     private boolean isTokenExpired(String token) {
-        return extractClaim(token, Claims::getExpiration).before(new Date());
+        Date now = new Date();
+        Date expirationDate = extractClaim(token, Claims::getExpiration);
+        if (expirationDate.before(now)) {
+            return true;
+        }
+
+        if (systemSettingsService == null) {
+            return false;
+        }
+
+        Date issuedAt = extractClaim(token, Claims::getIssuedAt);
+        if (issuedAt == null) {
+            return true;
+        }
+        long configuredExpiration = systemSettingsService.getSettings().getDureeSessionMinutes() * 60_000L;
+        return issuedAt.getTime() + configuredExpiration <= now.getTime();
     }
 
     private <T> T extractClaim(String token, Function<Claims, T> resolver) {
