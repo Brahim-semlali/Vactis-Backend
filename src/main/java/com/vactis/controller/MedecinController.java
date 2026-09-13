@@ -62,6 +62,12 @@ public class MedecinController {
         return medecinService.findById(id);
     }
 
+    // Récupère l'évolution mensuelle du CA et du nombre de cas d'un médecin
+    @GetMapping("/{id}/evolution")
+    public ResponseEntity<List<Map<String, Object>>> getMedecinEvolution(@PathVariable Long id){
+        return ResponseEntity.ok(medecinService.getEvolutionByMedecin(id));
+    }
+
     // Synchronise les médecins depuis le fichier Excel des données fictives
     @PostMapping("/sync")
     public void syncFromDataFictif(){
