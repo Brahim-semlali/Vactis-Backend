@@ -11,6 +11,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,5 +61,50 @@ class MedecinServiceTest {
         when(medecinRepository.findByCodeMedecinIgnoreCase("med001")).thenReturn(Optional.of(medecin));
 
         assertEquals(medecin, medecinService.findByCodeMedecin(" med001 "));
+    }
+
+    @Test
+    void recalculerStatutsEtSegmentsDynamiquesResetsCurrentCaWhenCurrentMonthHasNoActivity() {
+        Medecin medecin = new Medecin();
+        medecin.setId(1L);
+        medecin.setCaMois(860);
+        medecin.setCaBaseline(0);
+
+        YearMonth currentMonth = YearMonth.now();
+        YearMonth previousMonth = currentMonth.minusMonths(1);
+        YearMonth monthMinus2 = currentMonth.minusMonths(2);
+        YearMonth monthMinus3 = currentMonth.minusMonths(3);
+
+        when(medecinRepository.findAll()).thenReturn(List.of(medecin));
+        when(medecinRepository.saveAll(anyList())).thenReturn(List.of(medecin));
+        when(extractionDonneesRepository.countCasGroupedByMedecin()).thenReturn(Collections.<Object[]>emptyList());
+
+        when(extractionDonneesRepository.sumCaByMedecinAndDateRange(
+                currentMonth.atDay(1),
+                currentMonth.atEndOfMonth()
+        )).thenReturn(Collections.<Object[]>emptyList());
+
+        when(extractionDonneesRepository.sumCaByMedecinAndDateRange(
+                previousMonth.atDay(1),
+                previousMonth.atEndOfMonth()
+        )).thenReturn(Collections.<Object[]>singletonList(new Object[]{1L, 860L}));
+
+        when(extractionDonneesRepository.sumCaByMedecinAndDateRange(
+                monthMinus2.atDay(1),
+                monthMinus2.atEndOfMonth()
+        )).thenReturn(Collections.<Object[]>emptyList());
+
+        when(extractionDonneesRepository.sumCaByMedecinAndDateRange(
+                monthMinus3.atDay(1),
+                monthMinus3.atEndOfMonth()
+        )).thenReturn(Collections.<Object[]>emptyList());
+
+        when(extractionDonneesRepository.countCasByMedecinAndDateRange(any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(Collections.<Object[]>emptyList());
+
+        medecinService.recalculerStatutsEtSegmentsDynamiques();
+
+        assertEquals(0, medecin.getCaMois());
+        assertEquals(860, medecin.getCaBaseline());
     }
 }
