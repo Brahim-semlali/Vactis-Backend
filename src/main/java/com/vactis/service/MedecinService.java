@@ -20,8 +20,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.time.format.TextStyle;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 // Service métier pour la gestion du portefeuille médecins, la segmentation et le calcul des KPIs
@@ -62,6 +67,39 @@ public class MedecinService {
     // Recherche un médecin par son identifiant technique
     public Medecin findById(Long id){
         return medecinRepository.findById(id).orElse(null);
+    }
+
+    // Retourne l'évolution mensuelle du CA et du nombre de cas d'un médecin
+    public List<Map<String, Object>> getEvolutionByMedecin(Long id) {
+        if (id == null || medecinRepository.findById(id).isEmpty()) {
+            return List.of();
+        }
+
+        List<LocalDate> dates = extractionDonneesRepository.findDatesReceptionByMedecinId(id);
+        if (dates.isEmpty()) {
+            return List.of();
+        }
+
+        List<YearMonth> months = dates.stream()
+                .map(YearMonth::from)
+                .distinct()
+                .sorted()
+                .toList();
+
+        List<Map<String, Object>> evolution = new ArrayList<>();
+        for (YearMonth month : months) {
+            Map<String, Long> caMap = buildCaMapForMonth(month);
+            Map<String, Long> casMap = buildCasMapForMonth(month);
+
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("month", month.format(DateTimeFormatter.ofPattern("yyyy-MM")));
+            point.put("label", month.getMonth().getDisplayName(TextStyle.SHORT, Locale.FRANCE) + " " + month.getYear());
+            point.put("ca", caMap.getOrDefault(String.valueOf(id), 0L));
+            point.put("cas", casMap.getOrDefault(String.valueOf(id), 0L));
+            evolution.add(point);
+        }
+
+        return evolution;
     }
 
     // Met à jour la note de potentiel commercial saisie manuellement (1-5 ou null)
@@ -164,8 +202,7 @@ public class MedecinService {
         List<Medecin> medecins = medecinRepository.findAll();
         if (medecins.isEmpty()) return;
 
-        List<LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
-        YearMonth ymM = dates.isEmpty() ? YearMonth.now() : YearMonth.from(dates.get(0));
+        YearMonth ymM = YearMonth.now();
         YearMonth ymMm1 = ymM.minusMonths(1);
 
         Map<String, Long> caM = buildCaMapForMonth(ymM);
