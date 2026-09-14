@@ -17,5 +17,6 @@ public record UserAdminRequest(
         @Email(message = "L'email n'est pas valide")
         String email,
         String phone,
-        Boolean enabled
+        Boolean enabled,
+        String avatar
 ) {}
