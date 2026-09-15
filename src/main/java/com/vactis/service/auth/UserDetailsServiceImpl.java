@@ -134,6 +134,9 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         user.setEmail(request.email());
         user.setPhone(request.phone());
         user.setEnabled(request.enabled() == null || request.enabled());
+        if (request.avatar() != null) {
+            user.setAvatar(request.avatar());
+        }
     }
 
     public void assignRole(Long userId, Long roleId) {

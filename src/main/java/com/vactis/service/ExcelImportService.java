@@ -170,13 +170,15 @@ public class ExcelImportService {
                     .max(YearMonth::compareTo)
                     .orElse(YearMonth.now());
 
+            YearMonth moisCourant = YearMonth.now();
+
             int caMoisActuel = docRows.stream()
-                    .filter(r -> r.dateRec != null && YearMonth.from(r.dateRec).equals(maxYm))
+                    .filter(r -> r.dateRec != null && YearMonth.from(r.dateRec).equals(moisCourant))
                     .mapToInt(r -> r.prixPay)
                     .sum();
 
             int caBaselineRef = docRows.stream()
-                    .filter(r -> r.dateRec != null && YearMonth.from(r.dateRec).equals(maxYm.minusMonths(1)))
+                    .filter(r -> r.dateRec != null && YearMonth.from(r.dateRec).equals(moisCourant.minusMonths(1)))
                     .mapToInt(r -> r.prixPay)
                     .sum();
 
