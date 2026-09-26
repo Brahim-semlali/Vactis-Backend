@@ -1,9 +1,11 @@
 package com.vactis.service;
 
 import com.vactis.dto.medecin.MedecinFilterOptionsResponse;
+import com.vactis.dto.medecin.MedecinGeolocaliseDto;
 import com.vactis.dto.medecin.MedecinKpiResponse;
 import com.vactis.dto.medecin.MedecinMetaResponse;
 import com.vactis.dto.medecin.MedecinPageResponse;
+import com.vactis.dto.medecin.MedecinSansLocalisationDto;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RisqueUrgence;
 import com.vactis.model.medecin.StatutMedecin;
@@ -118,6 +120,75 @@ public class MedecinService {
         return medecinRepository.findById(id).orElse(medecin);
     }
 
+    // Retourne uniquement les médecins géolocalisés pour la carte Zone intelligence
+    public List<MedecinGeolocaliseDto> getMedecinsGeolocalises() {
+        return medecinRepository.findByLatitudeIsNotNullAndLongitudeIsNotNull()
+                .stream()
+                .map(m -> new MedecinGeolocaliseDto(
+                        m.getId(),
+                        m.getCodeMedecin(),
+                        m.getNom(),
+                        m.getPrenom(),
+                        m.getSpecialite(),
+                        m.getOrganisme(),
+                        m.getSegment(),
+                        m.getStatut(),
+                        m.getCaMois(),
+                        m.getLatitude(),
+                        m.getLongitude()
+                ))
+                .toList();
+    }
+
+    // Retourne les médecins sans coordonnées complètes pour la complétion admin
+    public List<MedecinSansLocalisationDto> getMedecinsSansLocalisation() {
+        return medecinRepository.findByLatitudeIsNullOrLongitudeIsNull()
+                .stream()
+                .map(m -> new MedecinSansLocalisationDto(
+                        m.getId(),
+                        m.getCodeMedecin(),
+                        m.getNom(),
+                        m.getPrenom(),
+                        m.getSpecialite(),
+                        m.getOrganisme(),
+                        m.getVille(),
+                        m.getSegment(),
+                        m.getStatut()
+                ))
+                .toList();
+    }
+
+    // Met à jour les coordonnées géographiques d'un médecin existant
+    public MedecinGeolocaliseDto updateLocalisation(Long id, Double latitude, Double longitude) {
+        Medecin medecin = medecinRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable : " + id));
+
+        if (latitude != null && (latitude < -90.0 || latitude > 90.0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La latitude doit être comprise entre -90.0 et 90.0");
+        }
+        if (longitude != null && (longitude < -180.0 || longitude > 180.0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La longitude doit être comprise entre -180.0 et 180.0");
+        }
+
+        medecin.setLatitude(latitude);
+        medecin.setLongitude(longitude);
+        Medecin saved = medecinRepository.save(medecin);
+
+        return new MedecinGeolocaliseDto(
+                saved.getId(),
+                saved.getCodeMedecin(),
+                saved.getNom(),
+                saved.getPrenom(),
+                saved.getSpecialite(),
+                saved.getOrganisme(),
+                saved.getSegment(),
+                saved.getStatut(),
+                saved.getCaMois(),
+                saved.getLatitude(),
+                saved.getLongitude()
+        );
+    }
+
     // Retourne les médecins par statut de performance
     public List<Medecin> findByStatut(StatutMedecin statutMedecin){
         return medecinRepository.findByStatut(statutMedecin);
@@ -197,6 +268,20 @@ public class MedecinService {
         return kpis;
     }
 
+    public static StatutPilotage normalizeStatutPilotage(String statut) {
+        if (statut == null) {
+            return StatutPilotage.ACTIF_STABLE;
+        }
+
+        String normalized = statut.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "SILENCE_CRITIQUE" -> StatutPilotage.RETENTION;
+            case "EXCLU" -> StatutPilotage.INACTIF;
+            case "ACTIF_STABLE", "PROGRESSION", "SURVEILLANCE", "RETENTION", "ONBOARDING", "A_REACTIVER", "INACTIF", "ACTIF" -> StatutPilotage.valueOf(normalized);
+            default -> StatutPilotage.ACTIF_STABLE;
+        };
+    }
+
     // Recalcule dynamiquement les statuts (selon les règles Controle) et segments (A/B/C/D) de tous les médecins
     public void recalculerStatutsEtSegmentsDynamiques() {
         List<Medecin> medecins = medecinRepository.findAll();
@@ -233,37 +318,54 @@ public class MedecinService {
             m.setCaBaseline((int) valMm1);
             m.setTotalCas(totalCasMap.getOrDefault(m.getId(), 0L).intValue());
 
-            String statutDynamique = null;
+            String statutDynamique;
+            LocalDate limite60Jours = LocalDate.now().minusDays(60);
+            boolean actif60Jours = m.getDateDerniereActivite() != null && !m.getDateDerniereActivite().isBefore(limite60Jours);
 
-            if (valM == 0 && valMm1 == 0) {
-                statutDynamique = m.getStatutPilotage() != null ? m.getStatutPilotage().name() : "EXCLU";
+            if (Boolean.TRUE.equals(m.getIsAReactiverManuel()) && valM == 0) {
+                statutDynamique = "A_REACTIVER";
+            } else if (valM == 0) {
+                statutDynamique = actif60Jours ? "RETENTION" : "INACTIF";
             } else if (valMm1 == 0 && valM > 0) {
                 statutDynamique = "ONBOARDING";
-            } else if (valMm1 > 0) {
+            } else {
                 double caReference = average(caMm1, caMm2, caMm3, key);
                 double casReference = average(casMm1, casMm2, casMm3, key);
                 double variationCa = ((valM - caReference) / Math.max(caReference, 300.0)) * 100.0;
                 double variationCas = ((casM.getOrDefault(key, 0L) - casReference)
                         / Math.max(casReference, 1.0)) * 100.0;
-                long varRounded = Math.round((0.60 * variationCa) + (0.40 * variationCas));
+                double variationMixte = (0.60 * variationCa) + (0.40 * variationCas);
 
-                if (varRounded > 20) statutDynamique = "PROGRESSION";
-                else if (varRounded >= -10) statutDynamique = "ACTIF_STABLE";
-                else if (varRounded >= -40) statutDynamique = "SURVEILLANCE";
-                else if (varRounded >= -70) statutDynamique = "RETENTION";
-                else statutDynamique = "SILENCE_CRITIQUE";
-            } else {
-                statutDynamique = "ACTIF_STABLE";
+                if (variationMixte > 20.0) {
+                    statutDynamique = "PROGRESSION";
+                } else if (variationMixte >= -10.0) {
+                    statutDynamique = "ACTIF_STABLE";
+                } else if (variationMixte >= -40.0) {
+                    statutDynamique = "SURVEILLANCE";
+                } else {
+                    statutDynamique = "RETENTION";
+                }
+
+                // Section 4 — Activité Irrégulière : neutralisation des baisses pour prescripteurs à profil atypique régulier
+                if (("SURVEILLANCE".equals(statutDynamique) || "RETENTION".equals(statutDynamique))
+                        && isPrescripteurIrregulier(m, valM, caMm1.getOrDefault(key, 0L), caMm2.getOrDefault(key, 0L), caMm3.getOrDefault(key, 0L), casM.getOrDefault(key, 0L), casReference)) {
+                    m.setIsProfilIrregulier(true);
+                    statutDynamique = "ACTIF_STABLE";
+                } else {
+                    m.setIsProfilIrregulier(false);
+                }
             }
 
             m.setCaMois((int) valM);
             m.setCaBaseline((int) valMm1);
 
-            if (statutDynamique != null && !statutDynamique.equalsIgnoreCase(m.getStatut())) {
+            if (!statutDynamique.equalsIgnoreCase(m.getStatut())) {
                 m.setStatut(statutDynamique.toUpperCase());
-                try {
-                    m.setStatutPilotage(StatutPilotage.valueOf(statutDynamique.toUpperCase()));
-                } catch (Exception ignored) {}
+            }
+
+            StatutPilotage normalizedPilotage = normalizeStatutPilotage(statutDynamique);
+            if (m.getStatutPilotage() != normalizedPilotage) {
+                m.setStatutPilotage(normalizedPilotage);
             }
             modifie = true;
         }
@@ -274,6 +376,71 @@ public class MedecinService {
 
         // Recalcul du score de valeur et des segments A/B/C/D selon la formule Anapath
         segmentationService.recalculerSegmentationPortefeuille();
+    }
+
+    private boolean isPrescripteurIrregulier(
+            Medecin m,
+            long caCurr,
+            long caMm1,
+            long caMm2,
+            long caMm3,
+            long casCurr,
+            double casRef
+    ) {
+        if (m == null) return false;
+
+        // Condition 1 : Ancienneté >= 6 mois
+        boolean ancienneteOk = m.getDatePremiereCollaboration() != null
+                && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(LocalDate.now());
+        if (!ancienneteOk && m.getCreatedAt() != null) {
+            ancienneteOk = !m.getCreatedAt().toLocalDate().plusMonths(6).isAfter(LocalDate.now());
+        }
+        if (!ancienneteOk) return false;
+
+        // Condition 2 : Au moins 2 mois actifs parmi M-1, M-2, M-3
+        int moisActifs = (caMm1 > 0 ? 1 : 0) + (caMm2 > 0 ? 1 : 0) + (caMm3 > 0 ? 1 : 0);
+        if (moisActifs < 2) return false;
+
+        // Condition 3 : Variabilité historique >= 30%
+        long maxHist = Math.max(caMm1, Math.max(caMm2, caMm3));
+        long minHist = Math.min(caMm1, Math.min(caMm2, caMm3));
+        if (maxHist > 0 && ((double)(maxHist - minHist) / maxHist) < 0.30) return false;
+
+        // Condition 4 : Volume total de cas >= 5
+        if (m.getTotalCas() != null && m.getTotalCas() < 5) return false;
+
+        // Condition 5 : Activité non nulle sur le mois courant
+        if (caCurr <= 0) return false;
+
+        // Condition 6 : Panier moyen préservé (>= 65% de la référence)
+        if (casCurr > 0 && casRef > 0) {
+            double panierCurr = (double) caCurr / casCurr;
+            double caRefMoy = (caMm1 + caMm2 + caMm3) / 3.0;
+            double panierRef = caRefMoy / casRef;
+            if (panierRef > 0 && (panierCurr / panierRef) < 0.65) return false;
+        }
+
+        // Condition 7 : Absence de réclamation bloquante
+        if (m.getCommentaire() != null && m.getCommentaire().toLowerCase().contains("reclamation")) return false;
+
+        // Condition 8 : Statut non inactif
+        return m.getStatut() == null || !"INACTIF".equalsIgnoreCase(m.getStatut());
+    }
+
+    // Active ou désactive manuellement le statut "À réactiver" pour un médecin (Section 1)
+    public Medecin toggleAReactiverManuel(Long id, Boolean active) {
+        Medecin m = medecinRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable"));
+        boolean nouvelEtat = active != null ? active : !Boolean.TRUE.equals(m.getIsAReactiverManuel());
+        m.setIsAReactiverManuel(nouvelEtat);
+        if (nouvelEtat && (m.getCaMois() == null || m.getCaMois() == 0)) {
+            m.setStatut("A_REACTIVER");
+            m.setStatutPilotage(StatutPilotage.A_REACTIVER);
+        } else if (!nouvelEtat && "A_REACTIVER".equalsIgnoreCase(m.getStatut())) {
+            m.setStatut("INACTIF");
+            m.setStatutPilotage(StatutPilotage.INACTIF);
+        }
+        return medecinRepository.save(m);
     }
 
     private Map<String, Long> buildCaMapForMonth(YearMonth ym) {

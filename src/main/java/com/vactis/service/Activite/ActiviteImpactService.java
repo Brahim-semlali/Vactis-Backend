@@ -1,5 +1,6 @@
 package com.vactis.service.Activite;
 
+import com.vactis.dto.activite.ConcordanceQualificationResponse;
 import com.vactis.dto.activite.DetailEvolutionResponse;
 import com.vactis.dto.activite.EvolutionParCommercialResponse;
 import com.vactis.dto.activite.RapportImpactResponse;
@@ -380,8 +381,9 @@ public class ActiviteImpactService {
             switch (r.getMedecin().getStatutPilotage()) {
                 case PROGRESSION -> { return TypeVisite.FIDELISATION; }
                 case SURVEILLANCE -> { return TypeVisite.DIAGNOSTIC; }
-                case SILENCE_CRITIQUE -> { return TypeVisite.URGENCE_SILENCE; }
+                case RETENTION -> { return TypeVisite.RETENTION; }
                 case ONBOARDING -> { return TypeVisite.PROSPECTION; }
+                case A_REACTIVER, INACTIF -> { return TypeVisite.PROSPECTION; }
                 default -> {}
             }
         }
@@ -458,6 +460,99 @@ public class ActiviteImpactService {
         String nom    = m.getNom()    != null ? m.getNom()    : "";
         String prenom = m.getPrenom() != null ? m.getPrenom() : "";
         return (nom + " " + prenom).trim();
+    }
+
+    /**
+     * Calcule la matrice de concordance Qualification Déclarée vs Résultat Réel M+1 (Section 6).
+     */
+    public ConcordanceQualificationResponse getConcordanceQualification(String moisParam) {
+        YearMonth ym = parseOrDefault(moisParam);
+        LocalDate start = ym.atDay(1);
+        LocalDate end   = ym.atEndOfMonth();
+
+        List<RetourTerrain> retours = retourTerrainRepository.findByDateVisiteBetweenWithFetch(start, end);
+        enrichAndLinkVactisActions(retours, ym.format(YYYY_MM));
+        List<Medecin> medecins = medecinRepository.findAll();
+
+        Map<Long, String> statutsM  = portefeuilleService.buildStatutMapForMonth(ym, medecins);
+        Map<Long, String> statutsM1 = portefeuilleService.buildStatutMapForMonth(ym.plusMonths(1), medecins);
+        Set<Long> medecinsAvecDonneesM1 = new HashSet<>(extractionDonneesRepository.findMedecinIdsWithActivityInRange(ym.plusMonths(1).atDay(1), ym.plusMonths(1).atEndOfMonth()));
+        boolean apresCalculable = isApresCalculable(ym);
+
+        long succesConfirmes = 0;
+        long fauxPositifs = 0;
+        long pertesConfirmees = 0;
+        long resiliencesImprevues = 0;
+        List<ConcordanceQualificationResponse.ConcordanceItem> details = new ArrayList<>();
+
+        for (RetourTerrain r : retours) {
+            QualificationVisite q = qualif(r);
+            if (q == QualificationVisite.NON_RENSEIGNE || q == QualificationVisite.NEUTRE || q == QualificationVisite.CONGE_ABSENCE) {
+                continue;
+            }
+
+            Medecin m = r.getMedecin();
+            if (m == null) continue;
+
+            String statM = statutsM.getOrDefault(m.getId(), "inactif");
+            String statM1 = apresCalculable ? statutsM1.getOrDefault(m.getId(), "inactif") : null;
+            String evolution = calculerEvolution(m.getId(), ym, statutsM, statutsM1, medecinsAvecDonneesM1, apresCalculable);
+
+            String diagnostic;
+            boolean concordant;
+
+            if (q == QualificationVisite.FAVORABLE) {
+                if ("FAVORABLE".equals(evolution) || "STABLE".equals(evolution)) {
+                    diagnostic = "SUCCES_CONFIRME";
+                    concordant = true;
+                    succesConfirmes++;
+                } else {
+                    diagnostic = "FAUX_POSITIF";
+                    concordant = false;
+                    fauxPositifs++;
+                }
+            } else { // DEFAVORABLE ou RECLAMATION
+                if ("DEFAVORABLE".equals(evolution)) {
+                    diagnostic = "PERTE_CONFIRMEE";
+                    concordant = true;
+                    pertesConfirmees++;
+                } else {
+                    diagnostic = "RESILIENCE_INATTENDUE";
+                    concordant = false;
+                    resiliencesImprevues++;
+                }
+            }
+
+            details.add(ConcordanceQualificationResponse.ConcordanceItem.builder()
+                    .retourId(r.getId())
+                    .medecinId(m.getId())
+                    .nomMedecin(buildNom(m))
+                    .commercial(commercialSafe(r))
+                    .dateVisite(r.getDateVisite() != null ? r.getDateVisite().toString() : "—")
+                    .qualificationDeclaree(q.name())
+                    .obstaclePrincipal(r.getObstaclePrincipal() != null ? r.getObstaclePrincipal().name() : null)
+                    .statutAvant(statM)
+                    .statutApres(statM1)
+                    .evolutionObservee(evolution)
+                    .diagnosticConcordance(diagnostic)
+                    .estConcordant(concordant)
+                    .build());
+        }
+
+        long total = details.size();
+        long totalConcordants = succesConfirmes + pertesConfirmees;
+        double tauxFiabilite = total > 0 ? Math.round((totalConcordants * 100.0 / total) * 10.0) / 10.0 : 0.0;
+
+        return ConcordanceQualificationResponse.builder()
+                .mois(ym.format(YYYY_MM))
+                .totalVisitesQualifiees(total)
+                .succesConfirmes(succesConfirmes)
+                .fauxPositifs(fauxPositifs)
+                .pertesConfirmees(pertesConfirmees)
+                .resiliencesImprevues(resiliencesImprevues)
+                .tauxFiabiliteCommerciale(tauxFiabilite)
+                .details(details)
+                .build();
     }
 
     private YearMonth parseOrDefault(String moisParam) {

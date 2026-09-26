@@ -18,5 +18,6 @@ public record SystemSettingsRequest(
         @NotNull Boolean mdpExigeCaractereSpecial,
         @NotNull @Positive Integer maxTentativesConnexion,
         @NotNull @jakarta.validation.constraints.PositiveOrZero Integer dureeBlocageMinutes,
-        @NotNull Boolean journalConnexionActif
+        @NotNull Boolean journalConnexionActif,
+        @NotNull @Positive Long bridgeGoalTarget
 ) {}

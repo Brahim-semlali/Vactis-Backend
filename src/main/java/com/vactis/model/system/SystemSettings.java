@@ -54,6 +54,9 @@ public class SystemSettings {
     @Column(name = "journal_connexion_actif")
     private Boolean journalConnexionActif = true;
 
+    @Column(name = "bridge_goal_target")
+    private Long bridgeGoalTarget = 5000000L;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -68,7 +71,8 @@ public class SystemSettings {
         if (dureeSessionMinutes == null || dureeSessionMinutes <= 0 || dureeInactiviteJours == null || dureeInactiviteJours <= 0
                 || mdpLongueurMinimale == null || mdpLongueurMinimale <= 0
                 || maxTentativesConnexion == null || maxTentativesConnexion <= 0 || dureeBlocageMinutes == null || dureeBlocageMinutes < 0
-                || mdpExigeMajuscule == null || mdpExigeChiffre == null || mdpExigeCaractereSpecial == null || journalConnexionActif == null) {
+                || mdpExigeMajuscule == null || mdpExigeChiffre == null || mdpExigeCaractereSpecial == null || journalConnexionActif == null
+                || bridgeGoalTarget == null || bridgeGoalTarget <= 0) {
             throw new IllegalArgumentException("Les paramètres doivent respecter des valeurs positives; les expirations et blocages peuvent être à zéro");
         }
         if (updatedAt == null) {

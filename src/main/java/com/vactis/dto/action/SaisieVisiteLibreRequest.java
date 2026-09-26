@@ -23,6 +23,8 @@ public class SaisieVisiteLibreRequest {
     private Boolean actionRealisee = true;
     private String motifNonRealisation;
     private String qualification;
+    private LocalDate dateDepart;
+    private LocalDate dateRetourPrevue;
     private String commentaire;
     private Double noteTerrain;
     private String prochaineAction;

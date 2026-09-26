@@ -45,9 +45,28 @@ public class SystemSettingsService {
         settings.setMaxTentativesConnexion(request.maxTentativesConnexion());
         settings.setDureeBlocageMinutes(request.dureeBlocageMinutes());
         settings.setJournalConnexionActif(request.journalConnexionActif());
+        settings.setBridgeGoalTarget(request.bridgeGoalTarget());
         settings.setUpdatedAt(LocalDateTime.now());
         settings.setUpdatedBy(admin);
         return toResponse(repository.save(settings));
+    }
+
+    @Transactional
+    public Long updateBridgeGoalTarget(Long target) {
+        if (target == null || target <= 0) {
+            throw new IllegalArgumentException("L'objectif Bridge to Goal doit être strictement positif");
+        }
+
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        Users admin = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("Administrateur introuvable"));
+
+        SystemSettings settings = getSettings();
+        settings.setBridgeGoalTarget(target);
+        settings.setUpdatedAt(LocalDateTime.now());
+        settings.setUpdatedBy(admin);
+        repository.save(settings);
+        return settings.getBridgeGoalTarget();
     }
 
     private static void validate(SystemSettingsRequest request) {
@@ -57,7 +76,8 @@ public class SystemSettingsService {
                 || request.maxTentativesConnexion() == null || request.maxTentativesConnexion() <= 0
                 || request.dureeBlocageMinutes() == null || request.dureeBlocageMinutes() < 0
                 || request.mdpExigeMajuscule() == null || request.mdpExigeChiffre() == null
-                || request.mdpExigeCaractereSpecial() == null || request.journalConnexionActif() == null) {
+                || request.mdpExigeCaractereSpecial() == null || request.journalConnexionActif() == null
+                || request.bridgeGoalTarget() == null || request.bridgeGoalTarget() <= 0) {
             throw new IllegalArgumentException("Les paramètres doivent respecter des valeurs positives; les expirations et blocages peuvent être à zéro");
         }
     }
@@ -73,6 +93,7 @@ public class SystemSettingsService {
                 settings.getMaxTentativesConnexion(),
                 settings.getDureeBlocageMinutes(),
                 settings.getJournalConnexionActif(),
+                settings.getBridgeGoalTarget(),
                 settings.getUpdatedAt(),
                 settings.getUpdatedBy() == null ? null : settings.getUpdatedBy().getUsername());
     }

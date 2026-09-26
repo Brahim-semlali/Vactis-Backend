@@ -46,6 +46,12 @@ public class Medecin {
     @Column(length = 100)
     private String ville;
 
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
     @Column(length = 20)
     private String telephone;
 
@@ -117,12 +123,27 @@ public class Medecin {
 
     private Double scoreRisque;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "statut_pilotage", nullable = false, length = 30)
-    private StatutPilotage statutPilotage = StatutPilotage.ACTIF;
+    @Column(name = "is_a_reactiver_manuel", columnDefinition = "boolean default false")
+    private Boolean isAReactiverManuel = false;
+
+    @Column(name = "is_profil_irregulier", columnDefinition = "boolean default false")
+    private Boolean isProfilIrregulier = false;
+
+    @Column(name = "score_urgence")
+    private Double scoreUrgence;
+
+    @Column(name = "intensite_risque")
+    private Double intensiteRisque;
+
+    @Column(name = "tendance_risque")
+    private Double tendanceRisque;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "risque_urgence", nullable = false, length = 20)
+    @Column(name = "statut_pilotage", nullable = false, columnDefinition = "varchar(30)")
+    private StatutPilotage statutPilotage = StatutPilotage.ACTIF_STABLE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "risque_urgence", nullable = false, columnDefinition = "varchar(20)")
     private RisqueUrgence risqueUrgence = RisqueUrgence.FAIBLE;
 
     @Column(name = "ca_mois")

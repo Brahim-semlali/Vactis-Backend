@@ -94,11 +94,37 @@ public class Action {
     @Column(name = "qualification", length = 50)
     private String qualification;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "obstacle_principal", length = 30)
+    private com.vactis.model.medecin.ObstaclePrincipal obstaclePrincipal;
+
     @Column(name = "prochaine_action", length = 255)
     private String prochaineAction;
 
     @Column(name = "date_prochaine_action")
     private LocalDate dateProchaineAction;
+
+    // --- Section 3 : Protocole Rétention à deux actions ---
+    @Column(name = "action_parente_id")
+    private Long actionParenteId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statut_plan_retention", length = 30)
+    private StatutPlanRetention statutPlanRetention;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type_etape_retention", length = 30)
+    private TypeEtapeRetention typeEtapeRetention = TypeEtapeRetention.AUCUNE;
+
+    // --- Section 9 : Horizons recommandés & retard ---
+    @Column(name = "horizon_jours")
+    private Integer horizonJours;
+
+    @Column(name = "date_echeance")
+    private LocalDate dateEcheance;
+
+    @Column(name = "est_en_retard")
+    private Boolean estEnRetard = false;
 
     @Transient
     private Double derniereNoteTerrain;

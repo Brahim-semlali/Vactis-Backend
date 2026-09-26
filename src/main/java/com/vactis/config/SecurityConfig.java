@@ -11,6 +11,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -29,6 +30,7 @@ import java.util.List;
 @Slf4j
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -64,10 +66,10 @@ public class SecurityConfig {
                         ).hasAuthority("MENU:/roles")
                         .requestMatchers(
                             "/api/admin/settings/**"
-                        ).hasAuthority("MENU:/parametres-systeme")
+                        ).hasAnyAuthority("ROLE_ADMIN", "MENU:/parametres-systeme")
                         .requestMatchers(
                             "/api/admin/**"
-                        ).hasAnyAuthority("MENU:/users", "MENU:/roles")
+                        ).hasAnyAuthority("ROLE_ADMIN", "MENU:/users", "MENU:/roles")
                         .requestMatchers(
                             "/api/controle/**"
                         ).hasAuthority("MENU:/controle")
@@ -76,6 +78,32 @@ public class SecurityConfig {
                             "/api/menu/Delete/**",
                             "/api/menu/Update/**",
                             "/api/medecins/sync"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                            HttpMethod.GET,
+                            "/api/agences-concurrentes",
+                            "/api/agences-concurrentes/**",
+                            "/api/medecins/geolocalises",
+                            "/api/medecins/sans-localisation"
+                        ).hasAnyAuthority("ROLE_ADMIN", "MENU:/zone-intelligence", "MENU:/medecins")
+                        .requestMatchers(
+                            HttpMethod.POST,
+                            "/api/agences-concurrentes",
+                            "/api/agences-concurrentes/**"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                            HttpMethod.PUT,
+                            "/api/agences-concurrentes",
+                            "/api/agences-concurrentes/**"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                            HttpMethod.DELETE,
+                            "/api/agences-concurrentes",
+                            "/api/agences-concurrentes/**"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                            HttpMethod.PATCH,
+                            "/api/medecins/*/localisation"
                         ).hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )

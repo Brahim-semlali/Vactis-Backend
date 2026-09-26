@@ -13,6 +13,8 @@ public class FicheContextuelleResponse {
 
     private Medecin medecin;
     private String statutExplanation;
+    private String commentaireMoteurTitre;
+    private String commentaireMoteurAction;
     private String silenceRadioStatus;
     private Integer joursSansActivite;
     private Integer frequenceJours;

@@ -103,7 +103,7 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
         Roles commerciale = roleRepository.findByNameRoleIgnoreCase("COMMERCIALE")
             .orElseThrow(() -> new IllegalStateException("Le rôle COMMERCIALE n'existe pas"));
         commerciale.setMenuItems(menuItemRepository.findAll().stream()
-            .filter(menu -> List.of("/accueil", "/medecins", "/actions", "/lecture-activite").contains(menu.getRoute()))
+            .filter(menu -> List.of("/accueil", "/medecins", "/actions", "/lecture-activite", "/alertes-hebdo", "/recommandations", "/bridge-to-goal").contains(menu.getRoute()))
             .toList());
         roleRepository.save(commerciale);
     }
@@ -121,20 +121,21 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     private void initMenuItems() {
         log.info("Vérification des éléments de menu de la barre latérale...");
         List<String[]> items = List.of(
-                    new String[]{"Accueil", "home", "/accueil", "1"},
-                    new String[]{"Dashboard Direction", "dashboard", "/dashboard-direction", "2"},
-                    new String[]{"Rapport commercial", "rapport", "/rapport-commercial", "3"},
-                    new String[]{"Lecture activité", "lecture", "/lecture-activite", "4"},
-                    new String[]{"Médecins", "medecins", "/medecins", "5"},
-                    new String[]{"Actions", "actions", "/actions", "6"},
-                    new String[]{"Alertes hebdo", "alertes", "/alertes-hebdo", "7"},
-                    new String[]{"Recommandations", "recommandations", "/recommandations", "8"},
-                    new String[]{"Valeur détectée", "valeur", "/valeur-detectee", "9"},
-                    new String[]{"Zone intelligence", "zone", "/zone-intelligence", "10"},
-                    new String[]{"Qualité & doublons", "qualite", "/qualite-doublons", "11"},
-                    new String[]{"Batches", "batches", "/batches", "12"},
-                    new String[]{"Exports terrain", "exports", "/exports-terrain", "13"},
-                    new String[]{"Statut API", "statut", "/statut-api", "14"}
+                    new String[]{"Accueil", "home", "/accueil", "1", "Pilotage"},
+                    new String[]{"Dashboard Direction", "dashboard", "/dashboard-direction", "2", "Pilotage"},
+                    new String[]{"Rapport commercial", "rapport", "/rapport-commercial", "3", "Pilotage"},
+                    new String[]{"Lecture activité", "lecture", "/lecture-activite", "4", "Pilotage"},
+                    new String[]{"Bridge to Goal", "chart", "/bridge-to-goal", "5", "Pilotage"},
+                    new String[]{"Médecins", "medecins", "/medecins", "6", "Portefeuille médecins"},
+                    new String[]{"Actions", "actions", "/actions", "7", "Terrain & Actions"},
+                    new String[]{"Alertes hebdo", "alertes", "/alertes-hebdo", "8", "Terrain & Actions"},
+                    new String[]{"Recommandations", "recommandations", "/recommandations", "9", "Terrain & Actions"},
+                    new String[]{"Valeur détectée", "valeur", "/valeur-detectee", "10", "Portefeuille médecins"},
+                    new String[]{"Zone intelligence", "zone", "/zone-intelligence", "11", "Portefeuille médecins"},
+                    new String[]{"Qualité & doublons", "qualite", "/qualite-doublons", "12", "Qualité des données"},
+                    new String[]{"Batches", "batches", "/batches", "13", "Qualité des données"},
+                    new String[]{"Exports terrain", "exports", "/exports-terrain", "14", "Administration"},
+                    new String[]{"Statut API", "statut", "/statut-api", "15", "Qualité des données"}
         );
 
         for (String[] arr : items) {
@@ -144,26 +145,27 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
             m.setRoute(arr[2]);
             m.setOrder(Integer.parseInt(arr[3]));
             m.setIsVisible(true);
+            if (arr.length > 4) {
+                menuPrincipalRepository.findByNomIgnoreCase(arr[4]).ifPresent(m::setMenuPrincipal);
+            }
             menuItemRepository.save(m);
         }
 
-        ensureMenuItem("Rôles", "roles", "/roles", 15);
-        ensureMenuItem("Users", "users", "/users", 16);
-        ensureMenuItem("Paramètres système", "settings", "/parametres-systeme", 17);
-        menuItemRepository.findByRoute("/parametres-systeme").ifPresent(settingsMenu ->
-            menuPrincipalRepository.findByNomIgnoreCase("Administration").ifPresent(administration -> {
-                settingsMenu.setMenuPrincipal(administration);
-                menuItemRepository.save(settingsMenu);
-            }));
+        ensureMenuItem("Rôles", "roles", "/roles", 16, "Administration");
+        ensureMenuItem("Users", "users", "/users", 17, "Administration");
+        ensureMenuItem("Paramètres système", "settings", "/parametres-systeme", 18, "Administration");
     }
 
-    private void ensureMenuItem(String label, String icon, String route, int order) {
+    private void ensureMenuItem(String label, String icon, String route, int order, String principalNom) {
         MenuItem menu = menuItemRepository.findByRoute(route).orElseGet(MenuItem::new);
         menu.setLabel(label);
         menu.setIcon(icon);
         menu.setRoute(route);
         menu.setOrder(order);
         menu.setIsVisible(true);
+        if (principalNom != null) {
+            menuPrincipalRepository.findByNomIgnoreCase(principalNom).ifPresent(menu::setMenuPrincipal);
+        }
         menuItemRepository.save(menu);
     }
 }

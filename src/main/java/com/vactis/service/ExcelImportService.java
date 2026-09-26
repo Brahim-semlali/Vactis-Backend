@@ -292,7 +292,7 @@ public class ExcelImportService {
                 a.setCycleMensuel(cycleCourant);
                 a.setCommentaire("Première visite d onboarding.");
                 actions.add(a);
-            } else if ("SILENCE_CRITIQUE".equals(statutMed) || "RETENTION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.SILENCE_CRITIQUE) {
+            } else if ("SILENCE_CRITIQUE".equals(statutMed) || "RETENTION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.RETENTION) {
                 Action a = new Action();
                 a.setMedecin(m);
                 a.setStatut(statutMed);
@@ -351,13 +351,15 @@ public class ExcelImportService {
     }
 
     private StatutPilotage determineStatutPilotage(String statut, int totalCa) {
-        if (statut == null) return StatutPilotage.ACTIF;
+        if (statut == null) return StatutPilotage.ACTIF_STABLE;
         return switch (statut.toUpperCase()) {
             case "PROGRESSION" -> StatutPilotage.PROGRESSION;
             case "SURVEILLANCE" -> StatutPilotage.SURVEILLANCE;
-            case "SILENCE_CRITIQUE", "RETENTION" -> StatutPilotage.SILENCE_CRITIQUE;
+            case "SILENCE_CRITIQUE", "RETENTION" -> StatutPilotage.RETENTION;
             case "ONBOARDING" -> StatutPilotage.ONBOARDING;
-            default -> StatutPilotage.ACTIF;
+            case "A_REACTIVER" -> StatutPilotage.A_REACTIVER;
+            case "INACTIF", "EXCLU" -> StatutPilotage.INACTIF;
+            default -> StatutPilotage.ACTIF_STABLE;
         };
     }
 

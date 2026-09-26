@@ -12,6 +12,7 @@ public record SystemSettingsResponse(
         Integer maxTentativesConnexion,
         Integer dureeBlocageMinutes,
         Boolean journalConnexionActif,
+        Long bridgeGoalTarget,
         LocalDateTime updatedAt,
         String updatedBy
 ) {}

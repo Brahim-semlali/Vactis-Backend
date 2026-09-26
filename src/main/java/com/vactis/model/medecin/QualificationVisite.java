@@ -10,5 +10,6 @@ public enum QualificationVisite {
     DEFAVORABLE,
     NEUTRE,
     RECLAMATION,
+    CONGE_ABSENCE,
     NON_RENSEIGNE
 }

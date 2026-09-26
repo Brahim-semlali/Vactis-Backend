@@ -37,7 +37,7 @@ class SystemSettingsServiceTest {
 
     @Test
     void rejectsNonPositiveSettings() {
-        SystemSettingsRequest request = new SystemSettingsRequest(0, 90, 8, false, false, false, 5, 15, true);
+        SystemSettingsRequest request = new SystemSettingsRequest(0, 90, 8, false, false, false, 5, 15, true, 5000000L);
 
         assertThrows(IllegalArgumentException.class, () -> service.updateSettings(request));
     }
@@ -50,9 +50,11 @@ class SystemSettingsServiceTest {
         when(repository.findFirstOrCreateDefault()).thenReturn(settings);
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(admin));
         when(repository.save(any(SystemSettings.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("admin", null));
+        org.springframework.security.core.context.SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(new UsernamePasswordAuthenticationToken("admin", null, java.util.Collections.emptyList()));
+        SecurityContextHolder.setContext(context);
 
-        SystemSettingsRequest request = new SystemSettingsRequest(30, 12, 12, true, true, true, 3, 0, false);
+        SystemSettingsRequest request = new SystemSettingsRequest(30, 12, 12, true, true, true, 3, 0, false, 5000000L);
         var response = service.updateSettings(request);
 
         assertEquals(30, response.dureeSessionMinutes());

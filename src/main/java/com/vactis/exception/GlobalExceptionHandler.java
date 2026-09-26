@@ -2,8 +2,11 @@ package com.vactis.exception;
 
 import com.vactis.dto.common.ErrorResponse;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -63,6 +66,24 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ex.getStatusCode()).body(new ErrorResponse(
                 null,
                 ex.getReason() != null ? ex.getReason() : ex.getMessage(),
+                null,
+                null,
+                null,
+                null,
+                null));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+        Throwable cause = ex.getMostSpecificCause();
+        String message = "Format JSON invalide. Vérifiez les champs envoyés.";
+        if (cause instanceof JsonParseException jsonParseException) {
+            message = "Format JSON invalide : " + jsonParseException.getOriginalMessage();
+        }
+        log.warn("[API] Requête JSON invalide | {}", message, ex);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErrorResponse(
+                com.vactis.exception.AuthErrorCode.INVALID_JSON,
+                message,
                 null,
                 null,
                 null,

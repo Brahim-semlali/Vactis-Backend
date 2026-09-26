@@ -61,6 +61,17 @@ public class RetourTerrain {
             columnDefinition = "varchar(20) default 'NON_RENSEIGNE'")
     private QualificationVisite qualification = QualificationVisite.NON_RENSEIGNE;
 
+        @Column(name = "date_depart")
+        private LocalDate dateDepart;
+
+        @Column(name = "date_retour_prevue")
+        private LocalDate dateRetourPrevue;
+
+    /** Obstacle principal obligatoire en cas de qualification DEFAVORABLE (Section 5). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "obstacle_principal", length = 30)
+    private ObstaclePrincipal obstaclePrincipal;
+
     /** Indique si la visite a donné lieu à une réclamation médecin. */
     @Column(name = "reclamation", nullable = false,
             columnDefinition = "boolean default false")

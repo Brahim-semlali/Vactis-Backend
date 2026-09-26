@@ -1,6 +1,7 @@
 package com.vactis.service;
 
 import com.vactis.model.medecin.Medecin;
+import com.vactis.model.medecin.StatutPilotage;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
 import com.vactis.service.Activite.SegmentationService;
@@ -64,6 +65,14 @@ class MedecinServiceTest {
     }
 
     @Test
+    void normalizePiloteStatusConvertsLegacyDatabaseValues() {
+        assertEquals(StatutPilotage.RETENTION, MedecinService.normalizeStatutPilotage("SILENCE_CRITIQUE"));
+        assertEquals(StatutPilotage.INACTIF, MedecinService.normalizeStatutPilotage("EXCLU"));
+        assertEquals(StatutPilotage.ACTIF_STABLE, MedecinService.normalizeStatutPilotage("ACTIF_STABLE"));
+        assertEquals(StatutPilotage.A_REACTIVER, MedecinService.normalizeStatutPilotage("A_REACTIVER"));
+    }
+
+    @Test
     void recalculerStatutsEtSegmentsDynamiquesResetsCurrentCaWhenCurrentMonthHasNoActivity() {
         Medecin medecin = new Medecin();
         medecin.setId(1L);
@@ -107,4 +116,56 @@ class MedecinServiceTest {
         assertEquals(0, medecin.getCaMois());
         assertEquals(860, medecin.getCaBaseline());
     }
+
+    @Test
+    void getMedecinsGeolocalisesMapsPropertiesCorrectly() {
+        Medecin m = new Medecin();
+        m.setId(12L);
+        m.setCodeMedecin("MED012");
+        m.setNom("Benali");
+        m.setPrenom("Karim");
+        m.setSpecialite("Gastro");
+        m.setOrganisme("Clinique Menara");
+        m.setSegment("A");
+        m.setStatut("PROGRESSION");
+        m.setCaMois(15000);
+        m.setLatitude(31.6295);
+        m.setLongitude(-7.9811);
+
+        when(medecinRepository.findByLatitudeIsNotNullAndLongitudeIsNotNull()).thenReturn(List.of(m));
+
+        var result = medecinService.getMedecinsGeolocalises();
+        assertEquals(1, result.size());
+        assertEquals("Benali", result.get(0).nom());
+        assertEquals("A", result.get(0).segment());
+        assertEquals("PROGRESSION", result.get(0).statut());
+        assertEquals(31.6295, result.get(0).latitude());
+        assertEquals(-7.9811, result.get(0).longitude());
+        assertEquals(15000, result.get(0).caMobile());
+    }
+
+    @Test
+    void updateLocalisationUpdatesCoords() {
+        Medecin m = new Medecin();
+        m.setId(5L);
+        when(medecinRepository.findById(5L)).thenReturn(Optional.of(m));
+        when(medecinRepository.save(m)).thenReturn(m);
+
+        var result = medecinService.updateLocalisation(5L, 31.63, -7.98);
+        assertEquals(31.63, result.latitude());
+        assertEquals(-7.98, result.longitude());
+        verify(medecinRepository).save(m);
+    }
+
+    @Test
+    void updateLocalisationRejectsInvalidBounds() {
+        Medecin m = new Medecin();
+        m.setId(5L);
+        when(medecinRepository.findById(5L)).thenReturn(Optional.of(m));
+
+        assertThrows(ResponseStatusException.class, () -> medecinService.updateLocalisation(5L, 100.0, -7.98));
+        assertThrows(ResponseStatusException.class, () -> medecinService.updateLocalisation(5L, 31.63, 200.0));
+        verify(medecinRepository, never()).save(any());
+    }
 }
+

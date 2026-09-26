@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -25,6 +26,16 @@ public class SystemSettingsController {
     @PutMapping
     public SystemSettingsResponse updateSettings(@Valid @RequestBody SystemSettingsRequest request) {
         return service.updateSettings(request);
+    }
+
+    @GetMapping("/bridge-goal-target")
+    public Long getBridgeGoalTarget() {
+        return service.getSettings().getBridgeGoalTarget();
+    }
+
+    @PutMapping("/bridge-goal-target")
+    public Long updateBridgeGoalTarget(@RequestParam Long target) {
+        return service.updateBridgeGoalTarget(target);
     }
 
 }

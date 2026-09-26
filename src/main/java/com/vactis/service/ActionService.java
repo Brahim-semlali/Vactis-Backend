@@ -6,6 +6,8 @@ import com.vactis.dto.action.ActionMetaResponse;
 import com.vactis.dto.action.ActionPageResponse;
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
+import com.vactis.model.action.StatutPlanRetention;
+import com.vactis.model.action.TypeEtapeRetention;
 import com.vactis.model.action.UrgenceAction;
 import com.vactis.model.medecin.RisqueUrgence;
 import com.vactis.repository.ActionRepository;
@@ -34,6 +36,11 @@ import com.vactis.repository.ExtractionDonneesRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import com.vactis.dto.reclamation.ReclamationRequest;
+import com.vactis.model.reclamation.CategorieReclamation;
+import com.vactis.model.reclamation.PrioriteReclamation;
+import com.vactis.model.reclamation.StatutReclamation;
+import com.vactis.model.medecin.ObstaclePrincipal;
 
 // Service métier pour la gestion, la recherche et le calcul des indicateurs des actions de pilotage
 @Service
@@ -46,6 +53,8 @@ public class ActionService {
     private final SegmentationService segmentationService;
     private final ExtractionDonneesRepository extractionDonneesRepository;
     private final RetourTerrainService retourTerrainService;
+    private final MoteurCommentaireService moteurCommentaireService;
+    private final ReclamationService reclamationService;
 
     public ActionService(
             ActionRepository actionRepository,
@@ -55,7 +64,9 @@ public class ActionService {
             MedecinRepository medecinRepository,
             SegmentationService segmentationService,
             ExtractionDonneesRepository extractionDonneesRepository,
-            RetourTerrainService retourTerrainService
+            RetourTerrainService retourTerrainService,
+            MoteurCommentaireService moteurCommentaireService,
+            ReclamationService reclamationService
     ) {
         this.actionRepository = actionRepository;
         this.controleService = controleService;
@@ -65,6 +76,8 @@ public class ActionService {
         this.segmentationService = segmentationService;
         this.extractionDonneesRepository = extractionDonneesRepository;
         this.retourTerrainService = retourTerrainService;
+        this.moteurCommentaireService = moteurCommentaireService;
+        this.reclamationService = reclamationService;
     }
 
     // Retourne toutes les actions en base
@@ -245,10 +258,46 @@ public class ActionService {
                     }
                 }
 
-                // Ajuster la date de visite si elle est dans le passé pour les actions PLANIFIEE
-                if (a.getEtatAction() == EtatAction.PLANIFIEE && (a.getDateVisite() == null || a.getDateVisite().isBefore(LocalDate.now()))) {
-                    a.setDateVisite(LocalDate.now().plusDays(5));
-                    modifie = true;
+                // Horizons recommandés (Section 9) : critique stratégique J+3, urgence J+7,
+                // intensité élevée J+15, intensité normale J+30.
+                int horizon;
+                if (Boolean.TRUE.equals(a.getUrgenceSilence()) || a.getUrgence() == UrgenceAction.SILENCE_CRITIQUE) {
+                    horizon = 3;
+                } else if (a.getUrgence() == UrgenceAction.URGENT) {
+                    horizon = 7;
+                } else if (a.getUrgence() == UrgenceAction.ELEVE || "RETENTION".equals(statutMed)) {
+                    horizon = 15;
+                } else if (a.getUrgence() == UrgenceAction.MOYEN || "SURVEILLANCE".equals(statutMed)) {
+                    horizon = 30;
+                } else {
+                    horizon = 30;
+                }
+                a.setHorizonJours(horizon);
+
+                // Initialisation du plan de rétention séquentiel (Section 3)
+                if ("RETENTION".equals(statutMed)) {
+                    if (a.getTypeEtapeRetention() == null || a.getTypeEtapeRetention() == TypeEtapeRetention.AUCUNE) {
+                        a.setTypeEtapeRetention(TypeEtapeRetention.ACTION_1);
+                        a.setStatutPlanRetention(StatutPlanRetention.EN_COURS);
+                        modifie = true;
+                    }
+                }
+
+                // Ajuster la date de visite et date d'échéance si nécessaire
+                if (a.getEtatAction() == EtatAction.PLANIFIEE) {
+                    if (a.getDateVisite() == null || a.getDateVisite().isBefore(LocalDate.now())) {
+                        a.setDateVisite(LocalDate.now().plusDays(horizon));
+                        modifie = true;
+                    }
+                    LocalDate echeance = a.getDateVisite() != null ? a.getDateVisite() : LocalDate.now().plusDays(horizon);
+                    a.setDateEcheance(echeance);
+                    boolean enRetard = echeance.isBefore(LocalDate.now());
+                    if (!Boolean.valueOf(enRetard).equals(a.getEstEnRetard())) {
+                        a.setEstEnRetard(enRetard);
+                        modifie = true;
+                    }
+                } else {
+                    a.setEstEnRetard(false);
                 }
             }
         }
@@ -282,7 +331,7 @@ public class ActionService {
         Action action = actionRepository.findById(idAction)
                 .orElseThrow(() -> new IllegalArgumentException("Action introuvable (ID: " + idAction + ")"));
 
-        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction());
+        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), request.getObstaclePrincipal(), request.getDateDepart(), request.getDateRetourPrevue());
         boolean realisee = Boolean.TRUE.equals(request.getActionRealisee());
         if (!realisee && (request.getMotifNonRealisation() == null || request.getMotifNonRealisation().isBlank())) {
             throw new IllegalArgumentException("Le motif de non-réalisation est obligatoire si l'action n'est pas réalisée.");
@@ -294,6 +343,7 @@ public class ActionService {
         action.setEtatAction(realisee ? EtatAction.REALISEE : EtatAction.PLANIFIEE);
         action.setMotifNonRealisation(request.getMotifNonRealisation());
         action.setQualification(request.getQualification());
+        action.setObstaclePrincipal(parseObstacle(request.getObstaclePrincipal()));
         action.setCommentaire(request.getCommentaire());
         action.setProchaineAction(request.getProchaineAction());
         action.setDateProchaineAction(request.getDateProchaineAction());
@@ -315,10 +365,17 @@ public class ActionService {
             rt.setVisiteur(username != null ? username : action.getCommercial());
             rt.setNote(request.getNoteTerrain());
             rt.setQualification(parseQualification(request.getQualification()));
+            rt.setDateDepart(request.getDateDepart());
+            rt.setDateRetourPrevue(request.getDateRetourPrevue());
+            rt.setObstaclePrincipal(parseObstacle(request.getObstaclePrincipal()));
             if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
                 rt.setReclamation(true);
             }
-            retourTerrainRepository.save(rt);
+            rt = retourTerrainRepository.save(rt);
+
+            if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
+                creerTicketReclamationAutomatique(m, request.getCommentaire(), rt.getObstaclePrincipal(), rt.getId(), username != null ? username : action.getCommercial());
+            }
         }
 
         return actionRepository.save(action);
@@ -327,7 +384,7 @@ public class ActionService {
     // Enregistre une visite commerciale libre (hors VACTIS)
     @Transactional
     public RetourTerrain creerVisiteLibre(SaisieVisiteLibreRequest request, String username) {
-        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction());
+        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), null, request.getDateDepart(), request.getDateRetourPrevue());
         Medecin medecin = null;
         if (request.getMedecinId() != null) {
             medecin = medecinRepository.findById(request.getMedecinId())
@@ -359,24 +416,67 @@ public class ActionService {
         rt.setVisiteur(username != null ? username : "Commercial");
         rt.setNote(request.getNoteTerrain());
         rt.setQualification(parseQualification(request.getQualification()));
+            rt.setDateDepart(request.getDateDepart());
+            rt.setDateRetourPrevue(request.getDateRetourPrevue());
         if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
             rt.setReclamation(true);
         }
 
-        return retourTerrainRepository.save(rt);
+        rt = retourTerrainRepository.save(rt);
+
+        if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
+            creerTicketReclamationAutomatique(medecin, request.getCommentaire(), null, rt.getId(), username != null ? username : "Commercial");
+        }
+
+        return rt;
+    }
+
+    private void creerTicketReclamationAutomatique(Medecin m, String description, ObstaclePrincipal obstacle, Long retourTerrainId, String declarant) {
+        try {
+            ReclamationRequest recReq = new ReclamationRequest();
+            recReq.setMedecinId(m.getId());
+            recReq.setDescription(description != null && !description.isBlank() ? description : "Réclamation signalée sur le terrain");
+            recReq.setPriorite(PrioriteReclamation.HAUTE);
+            recReq.setRetourTerrainId(retourTerrainId);
+            if (obstacle != null) {
+                switch (obstacle) {
+                    case QUALITE_DELAI -> recReq.setCategorie(CategorieReclamation.DELAIS_RESULTATS);
+                    case PRIX_TARIF -> recReq.setCategorie(CategorieReclamation.FACTURATION_TARIFS);
+                    case RELATIONNEL_ACCUEIL -> recReq.setCategorie(CategorieReclamation.RELATIONNEL_ACCUEIL);
+                    default -> recReq.setCategorie(CategorieReclamation.AUTRE);
+                }
+            } else {
+                recReq.setCategorie(CategorieReclamation.AUTRE);
+            }
+            reclamationService.creerReclamation(recReq, declarant);
+        } catch (Exception e) {
+            // Log but do not block the return submission if ticket fails
+            org.slf4j.LoggerFactory.getLogger(ActionService.class).error("Erreur lors de la création auto du ticket réclamation", e);
+        }
     }
 
     private void validateVisitRequest(Boolean actionRealisee, LocalDate dateVisite, String motif,
                                       String qualification, String commentaire, Double noteTerrain,
-                                      LocalDate dateProchaineAction) {
+                                      LocalDate dateProchaineAction, String obstaclePrincipal,
+                                      LocalDate dateDepart, LocalDate dateRetourPrevue) {
         if (dateVisite == null || dateVisite.isAfter(LocalDate.now())) {
             throw new IllegalArgumentException("La date réelle de visite est obligatoire et ne peut pas être future.");
         }
         if (Boolean.FALSE.equals(actionRealisee) && (motif == null || motif.isBlank())) {
             throw new IllegalArgumentException("Le motif de non-réalisation est obligatoire.");
         }
+        if (Boolean.TRUE.equals(actionRealisee) && (qualification == null || qualification.isBlank())) {
+            throw new IllegalArgumentException("La qualification est obligatoire après une action réalisée.");
+        }
+        if ("CONGE_ABSENCE".equalsIgnoreCase(qualification)
+                && (dateDepart == null || (dateRetourPrevue != null && dateRetourPrevue.isBefore(dateDepart)))) {
+            throw new IllegalArgumentException("Les dates de départ et de retour prévue sont obligatoires et cohérentes pour un congé ou une absence.");
+        }
         if ("RECLAMATION".equalsIgnoreCase(qualification) && (commentaire == null || commentaire.isBlank())) {
             throw new IllegalArgumentException("Le commentaire est obligatoire en cas de réclamation.");
+        }
+        if ("DEFAVORABLE".equalsIgnoreCase(qualification) && (obstaclePrincipal == null || obstaclePrincipal.isBlank())) {
+            throw new IllegalArgumentException("L'obstacle principal est obligatoire en cas de qualification défavorable.");
         }
         if (noteTerrain != null && (noteTerrain < 1.0 || noteTerrain > 5.0)) {
             throw new IllegalArgumentException("La note potentielle doit être comprise entre 1 et 5.");
@@ -393,6 +493,15 @@ public class ActionService {
             return QualificationVisite.valueOf(qualification.trim().toUpperCase());
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("Qualification invalide.");
+        }
+    }
+
+    private com.vactis.model.medecin.ObstaclePrincipal parseObstacle(String obstacle) {
+        if (obstacle == null || obstacle.isBlank()) return null;
+        try {
+            return com.vactis.model.medecin.ObstaclePrincipal.valueOf(obstacle.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return com.vactis.model.medecin.ObstaclePrincipal.AUTRE;
         }
     }
 
@@ -420,21 +529,15 @@ public class ActionService {
             silenceRadioStatus = "SUIVI REGULIER";
         }
 
-        String statutUpper = m.getStatut() != null ? m.getStatut().toUpperCase() : "ACTIF_STABLE";
-        String explanationText = switch (statutUpper) {
-            case "PROGRESSION" -> "Statut calculé d'après une variation mixte supérieure à +20% (60% CA, 40% volume) : PROGRESSION";
-            case "ACTIF_STABLE" -> "Statut calculé d'après une variation mixte entre -10% et +20% (60% CA, 40% volume) : ACTIF_STABLE";
-            case "SURVEILLANCE" -> "Statut calculé d'après une variation mixte entre -10% et -40% (60% CA, 40% volume) : SURVEILLANCE";
-            case "RETENTION" -> "Statut calculé d'après une variation mixte entre -40% et -70% (60% CA, 40% volume) : RETENTION";
-            case "SILENCE_CRITIQUE" -> "Statut calculé d'après une variation mixte inférieure à -70% ou un silence radio prolongé : SILENCE_CRITIQUE";
-            case "ONBOARDING" -> "Médecin nouvellement intégré au portefeuille : ONBOARDING";
-            default -> "Statut calculé d'après la variation mixte CA/volume : " + m.getStatut();
-        };
+        // Synthèse narrative contextuelle issue du Moteur Commentaire (Section 8)
+        MoteurCommentaireService.CommentaireMoteurDto synth = moteurCommentaireService.genererCommentaire(m);
 
         FicheContextuelleResponse resp = new FicheContextuelleResponse();
         resp.setMedecin(m);
         resp.setHistoriqueVisites(historique);
-        resp.setStatutExplanation(explanationText);
+        resp.setStatutExplanation(synth.explicationDetaillee());
+        resp.setCommentaireMoteurTitre(synth.titreSynthese());
+        resp.setCommentaireMoteurAction(synth.actionConseillee());
         resp.setSilenceRadioStatus(silenceRadioStatus);
         resp.setJoursSansActivite(joursSansActivite);
         resp.setFrequenceJours(frequenceJours);

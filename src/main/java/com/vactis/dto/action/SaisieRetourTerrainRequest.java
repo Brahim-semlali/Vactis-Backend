@@ -18,8 +18,17 @@ public class SaisieRetourTerrainRequest {
     /** Mandatory if actionRealisee = false. */
     private String motifNonRealisation;
 
-    /** Qualification: FAVORABLE, NEUTRE, DEFAVORABLE, RECLAMATION. */
+    /** Qualification: FAVORABLE, NEUTRE, DEFAVORABLE, RECLAMATION, CONGE_ABSENCE. */
     private String qualification;
+
+    /** Required for CONGE_ABSENCE. */
+    private LocalDate dateDepart;
+
+    /** Required for CONGE_ABSENCE when a return is known. */
+    private LocalDate dateRetourPrevue;
+
+    /** Mandatory if qualification = DEFAVORABLE (Section 5). */
+    private String obstaclePrincipal;
 
     /** Mandatory if qualification = RECLAMATION. */
     private String commentaire;

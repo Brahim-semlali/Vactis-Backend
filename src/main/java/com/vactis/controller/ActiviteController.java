@@ -143,4 +143,12 @@ public class ActiviteController {
     ) {
         return ResponseEntity.ok(activiteImpactService.getDetailEvolution(mois, page, taille));
     }
+
+    // Matrice de concordance Qualification Déclarée vs Résultat Réel M+1 (Section 6)
+    @GetMapping("/impact/concordance")
+    public ResponseEntity<com.vactis.dto.activite.ConcordanceQualificationResponse> getConcordanceQualification(
+            @RequestParam(name = "mois", required = false) String mois
+    ) {
+        return ResponseEntity.ok(activiteImpactService.getConcordanceQualification(mois));
+    }
 }

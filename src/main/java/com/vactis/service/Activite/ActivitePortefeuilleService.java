@@ -26,16 +26,18 @@ public class ActivitePortefeuilleService {
 
     private static final DateTimeFormatter YYYY_MM = DateTimeFormatter.ofPattern("yyyy-MM");
 
-    // Rang hiérarchique des 8 statuts VACTIS (rang 1 = meilleur état)
+    // Rang hiérarchique des 7 statuts VACTIS cibles (rang 1 = meilleur état)
     private static final Map<String, Integer> RANG_STATUT = Map.of(
             "progression",       1,
             "actif_stable",      2,
             "surveillance",      3,
             "retention",         4,
-            "silence_critique",  5,
-            "onboarding",        6,
-            "a_reactiver",       7,
-            "exclu",             8
+            "onboarding",        5,
+            "a_reactiver",       6,
+            "inactif",           7,
+            // Fallbacks rétrocompatibles
+            "silence_critique",  4,
+            "exclu",             7
     );
 
     // Libellés métier affichés dans l'UI pour chaque statut
@@ -44,9 +46,11 @@ public class ActivitePortefeuilleService {
             "actif_stable",      "Activité stable.",
             "surveillance",      "Signal à suivre.",
             "retention",         "Risque commercial.",
-            "silence_critique",  "Signal radio critique.",
             "onboarding",        "Nouveau potentiel.",
-            "a_reactiver",       "Reprise à qualifier.",
+            "a_reactiver",       "Reprise à qualifier (manuel).",
+            "inactif",           "Hors cycle actif (> 60 jours).",
+            // Fallbacks rétrocompatibles
+            "silence_critique",  "Signal radio critique.",
             "exclu",             "Hors cycle actif."
     );
 
@@ -56,16 +60,18 @@ public class ActivitePortefeuilleService {
             "actif_stable",      "green",
             "surveillance",      "orange",
             "retention",         "red",
-            "silence_critique",  "red",
             "onboarding",        "blue",
             "a_reactiver",       "orange",
+            "inactif",           "gray",
+            // Fallbacks rétrocompatibles
+            "silence_critique",  "red",
             "exclu",             "gray"
     );
 
-    // Ordre d'affichage dans la grille 4×2 (conforme aux captures de référence)
+    // Ordre d'affichage dans la grille (7 statuts officiels)
     private static final List<String> ORDRE_AFFICHAGE = List.of(
             "progression", "actif_stable", "surveillance", "retention",
-            "silence_critique", "onboarding", "a_reactiver", "exclu"
+            "onboarding", "a_reactiver", "inactif"
     );
 
     // Calcule la répartition des 8 statuts VACTIS pour tous les médecins sur le mois M (avec liste des médecins par statut)
@@ -297,7 +303,7 @@ public class ActivitePortefeuilleService {
     }
 
 
-        // Calcule le statut VACTIS avec la même variation mixte que le scoring médecin.
+    // Calcule le statut VACTIS selon les règles cibles (7 statuts, variation mixte 60/40, seuil 60j inactif, réactivation manuelle et neutralisation irrégulière)
     private String calculerStatutComplet(
             Medecin m,
             Map<String, Long> caM,
@@ -308,27 +314,126 @@ public class ActivitePortefeuilleService {
             Map<String, Long> casMm1,
             Map<String, Long> casMm2,
             Map<String, Long> casMm3,
-            Set<Long> actifHisto,
+            Set<Long> actif60Jours,
             Set<Long> onboardingIds
     ) {
         String key  = buildMedKey(m);
         long caCurr = caM.getOrDefault(key, 0L);
-        long caPrev = caMm1.getOrDefault(key, 0L);
 
-        if (onboardingIds.contains(m.getId()) && caCurr > 0) return "onboarding";
-        if (caCurr == 0) return actifHisto.contains(m.getId()) ? "a_reactiver" : "exclu";
+        // 1. Statut forcé manuellement "À réactiver"
+        if (Boolean.TRUE.equals(m.getIsAReactiverManuel()) && caCurr == 0) {
+            return "a_reactiver";
+        }
 
+        // 2. Onboarding (nouveau médecin avec 1ère activité constatée)
+        if (onboardingIds.contains(m.getId()) && caCurr > 0) {
+            return "onboarding";
+        }
+
+        // 3. Aucun CA sur le mois M : seuil de 60 jours sans aucun dossier -> Inactif
+        if (caCurr == 0) {
+            return actif60Jours.contains(m.getId()) ? "retention" : "inactif";
+        }
+
+        // 4. Calcul de la Variation Mixte (60% CA + 40% volume de cas)
         double caReference = average(caMm1, caMm2, caMm3, key);
         double casReference = average(casMm1, casMm2, casMm3, key);
         double variationCa = ((caCurr - caReference) / Math.max(caReference, 300.0)) * 100.0;
         double variationCas = ((casM.getOrDefault(key, 0L) - casReference) / Math.max(casReference, 1.0)) * 100.0;
         double variationMixte = (0.60 * variationCa) + (0.40 * variationCas);
 
-        if (variationMixte > 20.0) return "progression";
-        if (variationMixte >= -10.0) return "actif_stable";
-        if (variationMixte >= -40.0) return "surveillance";
-        if (variationMixte >= -70.0) return "retention";
-        return "silence_critique";
+        String statutTheorique;
+        if (variationMixte > 20.0) {
+            statutTheorique = "progression";
+        } else if (variationMixte >= -10.0) {
+            statutTheorique = "actif_stable";
+        } else if (variationMixte >= -40.0) {
+            statutTheorique = "surveillance";
+        } else {
+            // Dans le nouveau référentiel à 7 statuts, toute chute sous -40% est en Rétention (le silence critique est un score transversal)
+            statutTheorique = "retention";
+        }
+
+        // 5. Section 4 — Activité Irrégulière (8 conditions cumulatives)
+        // Neutralise un faux signal de Surveillance ou Rétention si le prescripteur a un profil irrégulier historique
+        if (("surveillance".equals(statutTheorique) || "retention".equals(statutTheorique))
+                && verifier8ConditionsActiviteIrreguliere(m, caCurr, caMm1.getOrDefault(key, 0L), caMm2.getOrDefault(key, 0L), caMm3.getOrDefault(key, 0L), casM.getOrDefault(key, 0L), casReference)) {
+            m.setIsProfilIrregulier(true);
+            return "actif_stable";
+        } else {
+            m.setIsProfilIrregulier(false);
+        }
+
+        return statutTheorique;
+    }
+
+    /**
+     * Vérifie les 8 conditions cumulatives définissant un prescripteur à profil d'activité irrégulière (Section 4) :
+     * 1. Ancienneté de collaboration >= 6 mois
+     * 2. Activité constatée sur au moins 2 des 3 derniers mois de référence (M-1, M-2, M-3)
+     * 3. Variabilité historique constatée (écart entre mois min et mois max >= 30%)
+     * 4. Volume global historique significatif (au moins 5 cas au total)
+     * 5. Activité non nulle sur le mois courant (caCurr > 0)
+     * 6. Panier moyen préservé (ratio CA/cas >= 65% de la moyenne de référence)
+     * 7. Aucune réclamation active non résolue
+     * 8. Prescripteur actif du portefeuille
+     */
+    public boolean verifier8ConditionsActiviteIrreguliere(
+            Medecin m,
+            long caCurr,
+            long caMm1,
+            long caMm2,
+            long caMm3,
+            long casCurr,
+            double casRef
+    ) {
+        if (m == null) return false;
+
+        // Condition 1 : Ancienneté >= 6 mois
+        boolean ancienneteOk = m.getDatePremiereCollaboration() != null
+                && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(LocalDate.now());
+        if (!ancienneteOk && m.getCreatedAt() != null) {
+            ancienneteOk = !m.getCreatedAt().toLocalDate().plusMonths(6).isAfter(LocalDate.now());
+        }
+        if (!ancienneteOk) return false;
+
+        // Condition 2 : Au moins 2 mois actifs parmi M-1, M-2, M-3
+        int moisActifsRef = 0;
+        if (caMm1 > 0) moisActifsRef++;
+        if (caMm2 > 0) moisActifsRef++;
+        if (caMm3 > 0) moisActifsRef++;
+        if (moisActifsRef < 2) return false;
+
+        // Condition 3 : Variabilité historique (écart relatif max - min >= 30%)
+        long maxHist = Math.max(caMm1, Math.max(caMm2, caMm3));
+        long minHist = Math.min(caMm1, Math.min(caMm2, caMm3));
+        if (maxHist > 0 && ((double)(maxHist - minHist) / maxHist) < 0.30) {
+            return false;
+        }
+
+        // Condition 4 : Volume total de cas >= 5
+        if (m.getTotalCas() != null && m.getTotalCas() < 5) return false;
+
+        // Condition 5 : Activité non nulle sur le mois courant
+        if (caCurr <= 0) return false;
+
+        // Condition 6 : Panier moyen préservé (CA / cas)
+        if (casCurr > 0 && casRef > 0) {
+            double panierCurr = (double) caCurr / casCurr;
+            double caRefMoy = (caMm1 + caMm2 + caMm3) / 3.0;
+            double panierRef = caRefMoy / casRef;
+            if (panierRef > 0 && (panierCurr / panierRef) < 0.65) {
+                return false;
+            }
+        }
+
+        // Condition 7 : Absence de réclamation bloquante
+        if (m.getCommentaire() != null && m.getCommentaire().toLowerCase().contains("reclamation")) {
+            return false;
+        }
+
+        // Condition 8 : Prescripteur non inactif
+        return m.getStatut() == null || !"INACTIF".equalsIgnoreCase(m.getStatut());
     }
 
     // Construit un MedecinStatutItem à partir d'un médecin et de ses valeurs M
@@ -358,12 +463,12 @@ public class ActivitePortefeuilleService {
         Map<String, Long> casMm1 = buildCasMap(ym.minusMonths(1));
         Map<String, Long> casMm2 = buildCasMap(ym.minusMonths(2));
         Map<String, Long> casMm3 = buildCasMap(ym.minusMonths(3));
-        Set<Long> actifHisto    = buildHistoriqueActifIds(ym);
+        Set<Long> actif60Jours  = buildHistoriqueActif60Jours(ym);
         Set<Long> onboarding    = buildOnboardingIds(ym, medecins);
 
         Map<Long, String> result = new LinkedHashMap<>();
         for (Medecin m : medecins) {
-            result.put(m.getId(), calculerStatutComplet(m, caM, caMm1, caMm2, caMm3, casM, casMm1, casMm2, casMm3, actifHisto, onboarding));
+            result.put(m.getId(), calculerStatutComplet(m, caM, caMm1, caMm2, caMm3, casM, casMm1, casMm2, casMm3, actif60Jours, onboarding));
         }
         return result;
     }
@@ -391,10 +496,10 @@ public class ActivitePortefeuilleService {
         return map;
     }
 
-    // Retourne les IDs des médecins ayant eu au moins un dossier dans les 6 mois précédant ym
-    private Set<Long> buildHistoriqueActifIds(YearMonth ym) {
-        LocalDate end   = ym.atDay(1).minusDays(1);
-        LocalDate start = ym.minusMonths(6).atDay(1);
+    // Retourne les IDs des médecins ayant eu au moins un dossier dans les 60 jours précédant la fin du mois ym
+    private Set<Long> buildHistoriqueActif60Jours(YearMonth ym) {
+        LocalDate end   = ym.atEndOfMonth();
+        LocalDate start = end.minusDays(60);
         return new HashSet<>(extractionDonneesRepository.findMedecinIdsWithActivityInRange(start, end));
     }
 

@@ -107,4 +107,11 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
         order by m.organisme
     """)
     List<String> findDistinctOrganismes();
+
+    // Retourne uniquement les médecins géolocalisés (latitude ET longitude non nulles)
+    List<Medecin> findByLatitudeIsNotNullAndLongitudeIsNotNull();
+
+    // Retourne les médecins sans localisation complète (latitude ou longitude nulle)
+    List<Medecin> findByLatitudeIsNullOrLongitudeIsNull();
 }
+

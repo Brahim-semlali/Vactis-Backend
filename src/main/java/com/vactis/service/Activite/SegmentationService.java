@@ -157,19 +157,38 @@ public class SegmentationService {
                 m.setJoursSansActivite(joursSansActivite);
             double scoreSilence = Math.min(100.0, (joursSansActivite / (double) intervalleEffectif) * 20.0);
             double baisseReference = Math.max(0.0, -variationCa);
-                double baisseCourte = Math.max(0.0, -percentageDifference(caCourant,
+            double baisseCourte = Math.max(0.0, -percentageDifference(caCourant,
                     valueFor(caParMois, moisCourant.minusMonths(1), m.getId()), 300.0));
-                m.setBaisseReference(round(baisseReference));
-                m.setBaisseCourte(round(baisseCourte));
-            double scoreRisque = Math.min(100.0, (0.40 * baisseReference) + (0.60 * baisseCourte));
+            m.setBaisseReference(round(baisseReference));
+            m.setBaisseCourte(round(baisseCourte));
+
+            // Tendance Risque (60% baisse courte + 40% baisse référence)
+            double tendanceRisque = Math.min(100.0, (0.40 * baisseReference) + (0.60 * baisseCourte));
+            m.setTendanceRisque(round(tendanceRisque));
             m.setScoreSilence(round(scoreSilence));
-            double risquePondere = (0.60 * scoreRisque + 0.40 * scoreSilence) * (poidsEconomique / 100.0);
-            m.setScoreRisque(round(risquePondere));
-            if (scoreSilence >= 100.0) {
+
+            // Score Risque : [60% tendance risque + 40% silence] × poids valeur
+            double scoreRisque = (0.60 * tendanceRisque + 0.40 * scoreSilence) * (poidsEconomique / 100.0);
+            m.setScoreRisque(round(scoreRisque));
+
+                // Intensité : 60% valeur + 40% risque selon le référentiel métier.
+                double intensiteRisque = Math.min(100.0, Math.max(0.0,
+                    (0.60 * scoreValeurDisponible(potentielSur100, performance, poidsEconomique))
+                        + (0.40 * scoreRisque)));
+            m.setIntensiteRisque(round(intensiteRisque));
+
+                // Score urgence: risque, phase, intensité et vieillissement recommandé.
+                double phaseScore = phaseUrgence(statutPourUrgence(m, variationMixte));
+                double vieillissementScore = Math.min(100.0, (joursSansActivite / (double) Math.max(intervalleEffectif, 1)) * 50.0);
+                double scoreUrgence = Math.min(100.0,
+                    (0.40 * scoreRisque) + (0.30 * phaseScore) + (0.20 * intensiteRisque) + (0.10 * vieillissementScore));
+            m.setScoreUrgence(round(scoreUrgence));
+
+            if (scoreSilence >= 100.0 || scoreUrgence >= 75.0) {
                 m.setRisqueUrgence(RisqueUrgence.URGENT);
-            } else if (scoreSilence > 70.0 || risquePondere >= 50.0) {
+            } else if (scoreSilence > 70.0 || scoreRisque >= 50.0 || scoreUrgence >= 50.0) {
                 m.setRisqueUrgence(RisqueUrgence.ELEVE);
-            } else if (risquePondere >= 25.0) {
+            } else if (scoreRisque >= 25.0 || scoreUrgence >= 25.0) {
                 m.setRisqueUrgence(RisqueUrgence.MOYEN);
             } else {
                 m.setRisqueUrgence(RisqueUrgence.FAIBLE);
@@ -195,6 +214,28 @@ public class SegmentationService {
 
         medecinRepository.saveAll(medecins);
         log.info("Recalcul de la segmentation Anapath terminé pour {} médecins.", totalMedecins);
+    }
+
+    private double scoreValeurDisponible(double potentiel, double performance, double poidsEconomique) {
+        return (0.40 * potentiel) + (0.40 * performance) + (0.20 * poidsEconomique);
+    }
+
+    private double phaseUrgence(String statut) {
+        return switch (statut) {
+            case "RETENTION" -> 100.0;
+            case "SURVEILLANCE" -> 70.0;
+            case "ONBOARDING" -> 55.0;
+            case "PROGRESSION" -> 35.0;
+            default -> 45.0;
+        };
+    }
+
+    private String statutPourUrgence(Medecin medecin, double variationMixte) {
+        if (medecin.getStatut() != null) return medecin.getStatut().toUpperCase();
+        if (variationMixte > 20.0) return "PROGRESSION";
+        if (variationMixte < -40.0) return "RETENTION";
+        if (variationMixte < -10.0) return "SURVEILLANCE";
+        return "ACTIF";
     }
 
     private Map<Long, Double> aggregateByMedecin(List<Object[]> rows) {

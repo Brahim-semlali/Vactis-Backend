@@ -1,6 +1,9 @@
 package com.vactis.controller;
 
+import com.vactis.dto.medecin.MedecinGeolocaliseDto;
+import com.vactis.dto.medecin.MedecinLocalisationRequest;
 import com.vactis.dto.medecin.MedecinPageResponse;
+import com.vactis.dto.medecin.MedecinSansLocalisationDto;
 import com.vactis.dto.medecin.RetourTerrainRequest;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RetourTerrain;
@@ -13,6 +16,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -88,6 +92,20 @@ public class MedecinController {
         return ResponseEntity.ok(updated);
     }
 
+    // Force ou retire manuellement le statut "À réactiver" (Section 1)
+    @PatchMapping("/{id}/reactiver-manuel")
+    public ResponseEntity<Medecin> toggleAReactiverManuel(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body
+    ) {
+        Boolean active = null;
+        if (body != null && body.containsKey("active") && body.get("active") != null) {
+            active = Boolean.valueOf(body.get("active").toString());
+        }
+        Medecin updated = medecinService.toggleAReactiverManuel(id, active);
+        return ResponseEntity.ok(updated);
+    }
+
     // Ajoute un nouveau retour terrain (visite historisée) pour un médecin
     @PostMapping("/{id}/retours-terrain")
     public ResponseEntity<RetourTerrain> addRetourTerrain(
@@ -103,5 +121,27 @@ public class MedecinController {
     public ResponseEntity<List<RetourTerrain>> getRetoursTerrain(@PathVariable Long id) {
         List<RetourTerrain> retours = retourTerrainService.getRetoursTerrainByMedecin(id);
         return ResponseEntity.ok(retours);
+    }
+
+    // Retourne uniquement les médecins géolocalisés pour la carte Zone intelligence (données synthétiques non sensibles)
+    @GetMapping("/geolocalises")
+    public ResponseEntity<List<MedecinGeolocaliseDto>> getMedecinsGeolocalises() {
+        return ResponseEntity.ok(medecinService.getMedecinsGeolocalises());
+    }
+
+    // Retourne les médecins sans localisation pour l'écran de complétion
+    @GetMapping("/sans-localisation")
+    public ResponseEntity<List<MedecinSansLocalisationDto>> getMedecinsSansLocalisation() {
+        return ResponseEntity.ok(medecinService.getMedecinsSansLocalisation());
+    }
+
+    // Met à jour les coordonnées GPS d'un médecin existant (réservé admin)
+    @PatchMapping("/{id}/localisation")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<MedecinGeolocaliseDto> updateLocalisation(
+            @PathVariable Long id,
+            @Valid @RequestBody MedecinLocalisationRequest request
+    ) {
+        return ResponseEntity.ok(medecinService.updateLocalisation(id, request.latitude(), request.longitude()));
     }
 }

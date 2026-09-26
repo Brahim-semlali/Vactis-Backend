@@ -8,5 +8,6 @@ public enum AuthErrorCode {
     USERNAME_TAKEN,
     EMAIL_TAKEN,
     VALIDATION_ERROR,
+    INVALID_JSON,
     ACCESS_DENIED
 }
