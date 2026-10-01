@@ -1,6 +1,7 @@
 package com.vactis.service.system;
 
 import com.vactis.dto.system.SystemSettingsRequest;
+import com.vactis.dto.system.LaboratoireLocationRequest;
 import com.vactis.model.auth.Users;
 import com.vactis.model.system.SystemSettings;
 import com.vactis.repository.auth.UserRepository;
@@ -62,5 +63,20 @@ class SystemSettingsServiceTest {
         assertEquals(12, response.mdpLongueurMinimale());
         assertEquals("admin", response.updatedBy());
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void updatesLaboratoryCoordinatesWithoutChangingOtherSettings() {
+        SystemSettings settings = new SystemSettings();
+        when(repository.findFirstOrCreateDefault()).thenReturn(settings);
+        when(repository.save(any(SystemSettings.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LaboratoireLocationRequest location = new LaboratoireLocationRequest(31.63, -7.99);
+        var response = service.updateLaboratoireLocation(location);
+
+        assertEquals(31.63, settings.getLaboratoireLatitude());
+        assertEquals(-7.99, settings.getLaboratoireLongitude());
+        assertEquals(location, response);
+        assertEquals(60, settings.getDureeSessionMinutes());
     }
 }
