@@ -83,9 +83,11 @@ public class SecurityConfig {
                             HttpMethod.GET,
                             "/api/agences-concurrentes",
                             "/api/agences-concurrentes/**",
+                            "/api/zone-intelligence/laboratoire",
                             "/api/medecins/geolocalises",
                             "/api/medecins/sans-localisation"
                         ).hasAnyAuthority("ROLE_ADMIN", "MENU:/zone-intelligence", "MENU:/medecins")
+                        .requestMatchers(HttpMethod.PUT, "/api/zone-intelligence/laboratoire").hasRole("ADMIN")
                         .requestMatchers(
                             HttpMethod.POST,
                             "/api/agences-concurrentes",
