@@ -57,6 +57,12 @@ public class SystemSettings {
     @Column(name = "bridge_goal_target")
     private Long bridgeGoalTarget = 5000000L;
 
+    @Column(name = "laboratoire_latitude")
+    private Double laboratoireLatitude;
+
+    @Column(name = "laboratoire_longitude")
+    private Double laboratoireLongitude;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
