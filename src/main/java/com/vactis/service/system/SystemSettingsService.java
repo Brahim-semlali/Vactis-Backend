@@ -2,6 +2,7 @@ package com.vactis.service.system;
 
 import com.vactis.dto.system.SystemSettingsRequest;
 import com.vactis.dto.system.SystemSettingsResponse;
+import com.vactis.dto.system.LaboratoireLocationRequest;
 import com.vactis.model.auth.Users;
 import com.vactis.model.system.SystemSettings;
 import com.vactis.repository.auth.UserRepository;
@@ -27,6 +28,16 @@ public class SystemSettingsService {
     @Transactional
     public SystemSettingsResponse getSettingsResponse() {
         return toResponse(getSettings());
+    }
+
+    @Transactional
+    public LaboratoireLocationRequest updateLaboratoireLocation(LaboratoireLocationRequest request) {
+        SystemSettings settings = getSettings();
+        settings.setLaboratoireLatitude(request.latitude());
+        settings.setLaboratoireLongitude(request.longitude());
+        settings.setUpdatedAt(LocalDateTime.now());
+        repository.save(settings);
+        return request;
     }
 
     @Transactional
