@@ -54,6 +54,12 @@ public class DropEnumCheckConstraintsRunner {
         // Table reclamations
         "ALTER TABLE reclamations DROP CONSTRAINT IF EXISTS reclamations_statut_check",
         "ALTER TABLE reclamations DROP CONSTRAINT IF EXISTS reclamations_type_check",
+        // Les dossiers de l'Excel peuvent ne pas avoir de médecin affecté.
+        "ALTER TABLE data_fictif ALTER COLUMN medecin_id DROP NOT NULL",
+        // La note terrain est facultative; anciennes bases peuvent encore l'imposer.
+        "ALTER TABLE retours_terrain ALTER COLUMN note DROP NOT NULL",
+        // Ancien schéma de l'historique: les nouveaux inserts renseignent created_at, pas date_changement.
+        "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'reclamation_historique' AND column_name = 'date_changement') THEN EXECUTE 'ALTER TABLE reclamation_historique ALTER COLUMN date_changement SET DEFAULT CURRENT_TIMESTAMP'; END IF; END $$",
     };
 
     @PostConstruct

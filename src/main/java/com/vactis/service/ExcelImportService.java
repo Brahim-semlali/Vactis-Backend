@@ -9,14 +9,16 @@ import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RisqueUrgence;
 import com.vactis.model.medecin.StatutPilotage;
 import com.vactis.repository.ActionRepository;
+import com.vactis.repository.AlerteHebdomadaireRepository;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
+import com.vactis.repository.ReclamationHistoriqueRepository;
+import com.vactis.repository.ReclamationRepository;
 import com.vactis.repository.RetourTerrainRepository;
+import com.vactis.repository.notification.NotificationRepository;
 import com.vactis.model.Controle.TypeControle;
 
 import com.vactis.service.Activite.SegmentationService;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -24,6 +26,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.InputStream;
 import java.time.LocalDate;
@@ -41,53 +45,46 @@ public class ExcelImportService {
     private final MedecinRepository medecinRepository;
     private final ActionRepository actionRepository;
     private final RetourTerrainRepository retourTerrainRepository;
+    private final AlerteHebdomadaireRepository alerteHebdomadaireRepository;
+    private final ReclamationHistoriqueRepository reclamationHistoriqueRepository;
+    private final ReclamationRepository reclamationRepository;
+    private final NotificationRepository notificationRepository;
     private final ResourceLoader resourceLoader;
-
-    @PersistenceContext
-    private final EntityManager entityManager;
 
     @Transactional
     public void importFictifExcelAndSyncMedecins() {
         try {
             Resource resource = resourceLoader.getResource("classpath:data/data_fictif_test_vactis.xlsx");
             if (!resource.exists()) {
-                log.warn("Fichier Excel introuvable dans classpath:data/data_fictif_test_vactis.xlsx");
-                return;
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Classeur de données fictives introuvable.");
             }
             try (InputStream inputStream = resource.getInputStream()) {
                 importFromExcelStream(inputStream);
             }
         } catch (Exception e) {
             log.error("Erreur lors de l'import et de la synchronisation depuis l'Excel fictif: {}", e.getMessage(), e);
+            if (e instanceof ResponseStatusException responseStatusException) {
+                throw responseStatusException;
+            }
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Échec de la synchronisation du classeur fictif.", e);
         }
     }
 
     @Transactional
     public void importFromExcelStream(InputStream inputStream) throws Exception {
-        // Supprimer les contraintes de check obsolètes si elles existent en base PostgreSQL
-        try {
-            entityManager.createNativeQuery("ALTER TABLE medecins DROP CONSTRAINT IF EXISTS medecins_statut_check").executeUpdate();
-            entityManager.createNativeQuery("ALTER TABLE medecins DROP CONSTRAINT IF EXISTS medecins_segment_check").executeUpdate();
-            entityManager.createNativeQuery("ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_statut_check").executeUpdate();
-            entityManager.createNativeQuery("ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_segment_check").executeUpdate();
-        } catch (Exception ex) {
-            log.debug("Ignoré lors du nettoyage des contraintes: {}", ex.getMessage());
-        }
-
-        // Purger uniquement les données d'extraction et les actions générées lors de l'import
-        log.info("Purge et ré-importation des actions et dossiers data_fictif (retours_terrain conservés)...");
+        log.info("Remplacement complet du jeu fictif (médecins, dossiers, actions et données médicales liées)...");
         retourTerrainRepository.detachActions();
+        notificationRepository.deleteByType("RECLAMATION");
+        reclamationHistoriqueRepository.deleteAllInBatch();
+        reclamationRepository.deleteAllInBatch();
+        alerteHebdomadaireRepository.deleteAllInBatch();
+        retourTerrainRepository.deleteAllInBatch();
         actionRepository.deleteAllInBatch();
         extractionDonneesRepository.deleteAllInBatch();
-        extractionDonneesRepository.flush();
-
-        // Récupérer les médecins existants indexés par codeMedecin pour éviter de casser les clés étrangères de retours_terrain
-        Map<String, Medecin> existingMedecinsMap = new HashMap<>();
-        for (Medecin m : medecinRepository.findAll()) {
-            if (m.getCodeMedecin() != null) {
-                existingMedecinsMap.put(m.getCodeMedecin().toUpperCase(), m);
-            }
-        }
+        medecinRepository.deleteAllInBatch();
+        medecinRepository.flush();
 
         Workbook workbook = WorkbookFactory.create(inputStream);
         Sheet sheet = workbook.getSheetAt(0);
@@ -110,7 +107,6 @@ public class ExcelImportService {
             Cell cellUrgent = row.getCell(7);
 
             String docRaw = getCellValueAsString(cellDoc).trim();
-            if (docRaw.isEmpty()) continue;
 
             LocalDate dateRec = getCellValueAsDate(cellDate);
             String spec = getCellValueAsString(cellSpec).trim();
@@ -123,12 +119,20 @@ public class ExcelImportService {
             RawRowData rowData = new RawRowData(rowIdx, dateRec, docRaw, spec, org, lieu, prixTot, prixPay, urgent);
             rawRows.add(rowData);
 
-            doctorGroupMap.computeIfAbsent(docRaw, k -> new ArrayList<>()).add(rowData);
+            if (!docRaw.isEmpty()) {
+                doctorGroupMap.computeIfAbsent(docRaw, k -> new ArrayList<>()).add(rowData);
+            }
         }
 
         log.info("Lecture Excel terminée: {} dossiers trouvés pour {} médecins distincts.", rawRows.size(), doctorGroupMap.size());
+        LocalDate dateReference = rawRows.stream()
+            .map(RawRowData::dateRec)
+            .filter(Objects::nonNull)
+            .max(LocalDate::compareTo)
+            .orElse(LocalDate.now());
+        log.info("Date de référence de l'import: {}", dateReference);
 
-        // 1. Extraire et synchroniser (upsert) les médecins issus de data_fictif
+        // 1. Recréer les médecins depuis le classeur de référence.
         Map<String, Medecin> doctorEntityMap = new HashMap<>();
         List<Medecin> savedMedecins = new ArrayList<>();
         int codeSeq = 1;
@@ -141,8 +145,8 @@ public class ExcelImportService {
             String[] parsedName = parseNomPrenom(cleanedName);
 
             int totalCa = docRows.stream().mapToInt(r -> r.prixPay).sum();
-            LocalDate minDate = docRows.stream().map(r -> r.dateRec).filter(Objects::nonNull).min(LocalDate::compareTo).orElse(LocalDate.now());
-            LocalDate maxDate = docRows.stream().map(r -> r.dateRec).filter(Objects::nonNull).max(LocalDate::compareTo).orElse(LocalDate.now());
+            LocalDate minDate = docRows.stream().map(RawRowData::dateRec).filter(Objects::nonNull).min(LocalDate::compareTo).orElse(dateReference);
+            LocalDate maxDate = docRows.stream().map(RawRowData::dateRec).filter(Objects::nonNull).max(LocalDate::compareTo).orElse(dateReference);
             String mainSpec = docRows.stream().map(r -> r.specialite).filter(s -> !s.isEmpty()).findFirst().orElse("Autre");
             String mainOrg = docRows.stream().map(r -> r.organisme).filter(o -> !o.isEmpty()).findFirst().orElse("Cabinet / Hôpital");
             String mainVille = docRows.stream().map(r -> r.lieu).filter(l -> !l.isEmpty())
@@ -152,12 +156,8 @@ public class ExcelImportService {
                     .map(Map.Entry::getKey)
                     .orElse(null);
 
-            String expectedCode = String.format("MED%03d", codeSeq++);
-            Medecin medecin = existingMedecinsMap.get(expectedCode.toUpperCase());
-            if (medecin == null) {
-                medecin = new Medecin();
-                medecin.setCodeMedecin(expectedCode);
-            }
+            Medecin medecin = new Medecin();
+            medecin.setCodeMedecin(String.format(Locale.ROOT, "MED%03d", codeSeq++));
 
             medecin.setPrenom(parsedName[0]);
             medecin.setNom(parsedName[1]);
@@ -170,7 +170,7 @@ public class ExcelImportService {
                     .max(YearMonth::compareTo)
                     .orElse(YearMonth.now());
 
-            YearMonth moisCourant = YearMonth.now();
+            YearMonth moisCourant = YearMonth.from(dateReference);
 
             int caMoisActuel = docRows.stream()
                     .filter(r -> r.dateRec != null && YearMonth.from(r.dateRec).equals(moisCourant))
@@ -209,8 +209,8 @@ public class ExcelImportService {
             ExtractionDonnees dossier = new ExtractionDonnees();
             dossier.setMedecin(m);
             dossier.setReferenceDossier(String.format("DOS-%05d", r.rowIdx));
-            dossier.setDateReception(r.dateRec != null ? r.dateRec : LocalDate.now());
-            dossier.setDatePrelevement(r.dateRec != null ? r.dateRec : LocalDate.now());
+            dossier.setDateReception(r.dateRec != null ? r.dateRec : dateReference);
+            dossier.setDatePrelevement(r.dateRec != null ? r.dateRec : dateReference);
             dossier.setTypeAnalyse(r.specialite != null && !r.specialite.isEmpty() ? r.specialite : "Analyse biologique");
             dossier.setNombreAnalyses(1);
             dossier.setStatutDossier(StatutDossier.TERMINE);
@@ -225,108 +225,123 @@ public class ExcelImportService {
         extractionDonneesRepository.saveAll(dossiers);
 
         // 3. Recalculer le Score de valeur et la segmentation A/B/C/D
-        segmentationService.recalculerSegmentationPortefeuille();
+        segmentationService.recalculerSegmentationPortefeuille(dateReference);
 
         // 4. Générer des actions associées uniquement aux nouveaux médecins synchronisés
-        generateActionsForMedecins(savedMedecins);
+        generateActionsForMedecins(savedMedecins, dateReference);
 
-        log.info("Base synchronisée avec succès depuis data_fictif: {} médecins et {} dossiers.", savedMedecins.size(), dossiers.size());
+        log.info("Base synchronisée avec succès depuis data_fictif au {}: {} médecins et {} dossiers.",
+            dateReference, savedMedecins.size(), dossiers.size());
     }
 
-    private void generateActionsForMedecins(List<Medecin> medecins) {
+    void generateActionsForMedecins(List<Medecin> medecins, LocalDate dateReference) {
         List<Action> actions = new ArrayList<>();
         String[] commerciaux = new String[]{"Karim Bennani", "Salma Idrissi"};
-        // Cycle mensuel courant calculé dynamiquement (format yyyy-MM)
-        String cycleCourant = java.time.YearMonth.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+        String cycleCourant = YearMonth.from(dateReference).toString();
         int idx = 0;
 
         for (Medecin m : medecins) {
+            if (medecinRepository.isPseudoMedecin(m)) continue;
             String commercial = commerciaux[idx++ % commerciaux.length];
-            String statutMed = (m.getStatut() != null ? m.getStatut() : (m.getStatutPilotage() != null ? m.getStatutPilotage().name() : "NOUVEAU")).toUpperCase();
+            String statutMed = (m.getStatut() != null ? m.getStatut()
+                    : (m.getStatutPilotage() != null ? m.getStatutPilotage().name() : "NOUVEAU")).toUpperCase();
 
-            if ("SURVEILLANCE".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.SURVEILLANCE) {
-                Action a = new Action();
-                a.setMedecin(m);
-                a.setStatut(statutMed);
-                a.setSegment(m.getSegment());
-                a.setActionRecommandee("visite urgence silence");
-                a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
-                a.setEtatAction(EtatAction.PLANIFIEE);
-                a.setDateVisite(LocalDate.now().plusDays(5));
-                a.setCommercial(commercial);
-                a.setLieuOrganisme(m.getOrganisme());
-                a.setBacklog(false);
-                a.setUrgenceSilence(true);
-                a.setCycleMensuel(cycleCourant);
-                a.setCommentaire("Relance prioritaire sur données fictives.");
-                actions.add(a);
-            } else if ("PROGRESSION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.PROGRESSION) {
-                Action a = new Action();
-                a.setMedecin(m);
-                a.setStatut(statutMed);
-                a.setSegment(m.getSegment());
-                a.setActionRecommandee("visite suivi progression");
-                a.setUrgence(UrgenceAction.FAIBLE);
-                a.setEtatAction(EtatAction.REALISEE);
-                a.setDateVisite(LocalDate.now().minusDays(3));
-                a.setCommercial(commercial);
-                a.setLieuOrganisme(m.getOrganisme());
-                a.setBacklog(false);
-                a.setUrgenceSilence(false);
-                a.setCycleMensuel(cycleCourant);
-                a.setCommentaire("Visite de suivi progression effectuée.");
-                actions.add(a);
-            } else if ("ONBOARDING".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.ONBOARDING) {
-                Action a = new Action();
-                a.setMedecin(m);
-                a.setStatut(statutMed);
-                a.setSegment(m.getSegment());
-                a.setActionRecommandee("visite onboarding");
-                a.setUrgence(UrgenceAction.ELEVE);
-                a.setEtatAction(EtatAction.PLANIFIEE);
-                a.setDateVisite(LocalDate.now().plusDays(7));
-                a.setCommercial(commercial);
-                a.setLieuOrganisme(m.getOrganisme());
-                a.setBacklog(false);
-                a.setUrgenceSilence(false);
-                a.setCycleMensuel(cycleCourant);
-                a.setCommentaire("Première visite d onboarding.");
-                actions.add(a);
-            } else if ("SILENCE_CRITIQUE".equals(statutMed) || "RETENTION".equals(statutMed) || m.getStatutPilotage() == StatutPilotage.RETENTION) {
-                Action a = new Action();
-                a.setMedecin(m);
-                a.setStatut(statutMed);
-                a.setSegment(m.getSegment());
-                a.setActionRecommandee("visite urgence silence");
-                a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
-                a.setEtatAction(EtatAction.PLANIFIEE);
-                a.setDateVisite(LocalDate.now().plusDays(2));
-                a.setCommercial(commercial);
-                a.setLieuOrganisme(m.getOrganisme());
-                a.setBacklog(false);
-                a.setUrgenceSilence(true);
-                a.setCycleMensuel(cycleCourant);
-                a.setCommentaire("Silence prolongé à traiter en priorité.");
-                actions.add(a);
-            } else {
-                Action a = new Action();
-                a.setMedecin(m);
-                a.setStatut(statutMed);
-                a.setSegment(m.getSegment());
-                a.setActionRecommandee("visite suivi régulier");
-                a.setUrgence(UrgenceAction.FAIBLE);
-                a.setEtatAction(EtatAction.PLANIFIEE);
-                a.setDateVisite(LocalDate.now().plusDays(5));
-                a.setCommercial(commercial);
-                a.setLieuOrganisme(m.getOrganisme());
-                a.setBacklog(false);
-                a.setUrgenceSilence(false);
-                a.setCycleMensuel(cycleCourant);
-                a.setCommentaire("Visite de suivi commercial régulier et fidélisation.");
+            Action a = buildActionPourStatut(m, statutMed, commercial, cycleCourant, dateReference);
+            if (a != null) {
                 actions.add(a);
             }
+            // Section 1 du document :
+            // INACTIF -> 0 action automatique (reactivation sur decision uniquement)
+            // ACTIVITE_IRREGULIERE -> 0 action automatique (liste Recommandations uniquement)
         }
         actionRepository.saveAll(actions);
+    }
+
+    @Transactional
+    public void regenerateImportedDataActions(List<Medecin> medecins, LocalDate dateReference) {
+        actionRepository.deleteUntouchedImportGeneratedActions();
+        generateActionsForMedecins(medecins, dateReference);
+        actionRepository.flush();
+    }
+
+    /**
+     * Retourne l'action VACTIS conforme a la Section 1 pour un statut donne,
+     * ou null si aucune action automatique n'est prevue (Inactif, Activite irreguliere).
+     * Libelles fonctionnels du document :
+     *   Progression -> Reconnaissance       -> "visite suivi progression"
+     *   Actif/Actif stable -> Fidelisation  -> "visite suivi regulier"
+     *   Surveillance -> Diagnostic/surveil. -> "visite diagnostic surveillance"
+     *   Retention -> Diagnostic (Action 1)  -> "visite diagnostic"
+     *   Onboarding -> Qualification         -> "visite onboarding"
+     *   Inactif / Activite irreguliere      -> null (0 action)
+     */
+    private Action buildActionPourStatut(Medecin m, String statutMed, String commercial,
+                                         String cycleCourant, LocalDate dateReference) {
+        switch (statutMed) {
+            case "PROGRESSION": {
+                // Section 1 : Progression -> Reconnaissance (1 action)
+                Action a = baseAction(m, statutMed, commercial, cycleCourant);
+                a.setActionRecommandee("visite suivi progression");
+                a.setUrgence(UrgenceAction.FAIBLE);
+                a.setDateVisite(dateReference.plusDays(7));
+                a.setCommentaire("Visite de reconnaissance et suivi de la progression.");
+                return a;
+            }
+            case "ACTIF_STABLE": case "ACTIF": {
+                // Section 1 : Actif -> Fidelisation (1 action)
+                Action a = baseAction(m, statutMed, commercial, cycleCourant);
+                a.setActionRecommandee("visite suivi r\u00e9gulier");
+                a.setUrgence(UrgenceAction.FAIBLE);
+                a.setDateVisite(dateReference.plusDays(5));
+                a.setCommentaire("Visite de fid\u00e9lisation et suivi commercial r\u00e9gulier.");
+                return a;
+            }
+            case "SURVEILLANCE": {
+                // Section 1 : Surveillance -> Diagnostic / surveillance (1 action)
+                Action a = baseAction(m, statutMed, commercial, cycleCourant);
+                a.setActionRecommandee("visite diagnostic surveillance");
+                a.setUrgence(UrgenceAction.ELEVE);
+                a.setDateVisite(dateReference.plusDays(5));
+                a.setCommentaire("Diagnostic et surveillance de l'activit\u00e9.");
+                return a;
+            }
+            case "RETENTION": case "SILENCE_CRITIQUE": {
+                // Section 1 : Retention -> Diagnostic (Action 1, 2 maximum)
+                Action a = baseAction(m, statutMed, commercial, cycleCourant);
+                a.setActionRecommandee("visite diagnostic");
+                a.setUrgence(UrgenceAction.ELEVE);
+                a.setDateVisite(dateReference.plusDays(2));
+                a.setCommentaire("Visite de diagnostic pour identifier la cause de la baisse.");
+                return a;
+            }
+            case "ONBOARDING": {
+                // Section 1 : Onboarding -> Qualification (1 action)
+                Action a = baseAction(m, statutMed, commercial, cycleCourant);
+                a.setActionRecommandee("visite onboarding");
+                a.setUrgence(UrgenceAction.ELEVE);
+                a.setDateVisite(dateReference.plusDays(7));
+                a.setCommentaire("Premi\u00e8re visite d'onboarding.");
+                return a;
+            }
+            // INACTIF, ACTIVITE_IRREGULIERE, A_REACTIVER, et tout autre statut : 0 action automatique
+            default:
+                return null;
+        }
+    }
+
+    private Action baseAction(Medecin m, String statutMed, String commercial, String cycleCourant) {
+        Action a = new Action();
+        a.setMedecin(m);
+        a.setStatut(statutMed);
+        a.setSegment(m.getSegment());
+        a.setEtatAction(EtatAction.PLANIFIEE);
+        a.setCommercial(commercial);
+        a.setLieuOrganisme(m.getOrganisme());
+        a.setBacklog(false);
+        a.setUrgenceSilence(false);
+        a.setCycleMensuel(cycleCourant);
+        a.setSourceRecommandation("IMPORT_AUTO");
+        return a;
     }
 
     private String cleanDoctorName(String raw) {
@@ -388,7 +403,7 @@ public class ExcelImportService {
     }
 
     private LocalDate getCellValueAsDate(Cell cell) {
-        if (cell == null) return LocalDate.now();
+        if (cell == null) return null;
         if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
             Date date = cell.getDateCellValue();
             return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
@@ -396,7 +411,7 @@ public class ExcelImportService {
             Date date = DateUtil.getJavaDate(cell.getNumericCellValue());
             return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
         }
-        return LocalDate.now();
+        return null;
     }
 
     private record RawRowData(int rowIdx, LocalDate dateRec, String docName, String specialite,

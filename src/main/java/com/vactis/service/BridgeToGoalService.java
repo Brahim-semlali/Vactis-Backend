@@ -1,23 +1,30 @@
 package com.vactis.service;
 
 import com.vactis.dto.bridgetogoal.BridgeToGoalResponse;
+import com.vactis.dto.bridgetogoal.BridgeOpportunityItem;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.reclamation.StatutReclamation;
 import com.vactis.model.system.SystemSettings;
+import com.vactis.model.system.BridgeGoalTarget;
 import com.vactis.repository.ActionRepository;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.ReclamationRepository;
+import com.vactis.repository.system.BridgeGoalTargetRepository;
 import com.vactis.service.system.SystemSettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Service de simulation de trajectoire budgétaire "Bridge to Goal" (Sections 12 & 13).
@@ -32,19 +39,45 @@ public class BridgeToGoalService {
     private final ActionRepository actionRepository;
     private final ReclamationRepository reclamationRepository;
     private final SystemSettingsService systemSettingsService;
+    private final BridgeGoalTargetRepository bridgeGoalTargetRepository;
 
-    public BridgeToGoalResponse simulerTrajectoire(Long targetBudgetParam, String moisParam) {
+    public BridgeToGoalResponse simulerTrajectoire(String moisParam) {
         YearMonth ym = determinerMoisReference(moisParam);
+        BridgeGoalTarget monthlyTarget = bridgeGoalTargetRepository.findByPeriod(ym.toString()).orElse(null);
+        SystemSettings settings = systemSettingsService.getSettings();
+        Long targetBudget = settings == null ? null : settings.getBridgeGoalTarget();
+        if ((targetBudget == null || targetBudget <= 0) && monthlyTarget == null) {
+            throw new ResponseStatusException(
+                HttpStatus.PRECONDITION_FAILED,
+                "L’objectif annuel doit être défini par un administrateur dans les paramètres système."
+            );
+        }
+        if (targetBudget == null || targetBudget <= 0) targetBudget = 0L;
+        long proratedMonthlyTarget = Math.round((double) targetBudget / 12.0);
+        long effectiveMonthlyTarget = monthlyTarget == null ? proratedMonthlyTarget : monthlyTarget.getTargetAmount();
+        Long previousMonthRevenue = extractionDonneesRepository.sumPrixAPayerByDateRange(
+            ym.minusMonths(1).atDay(1), ym.minusMonths(1).atEndOfMonth());
+        if (previousMonthRevenue == null) previousMonthRevenue = 0L;
 
         Long caActuel = extractionDonneesRepository.sumPrixAPayerByDateRange(ym.atDay(1), ym.atEndOfMonth());
         if (caActuel == null) caActuel = 0L;
         Long casMoisTotal = extractionDonneesRepository.countCasByDateRange(ym.atDay(1), ym.atEndOfMonth());
-        Long caPortefeuille = extractionDonneesRepository.sumPrixAPayerWithMedecinByDateRange(ym.atDay(1), ym.atEndOfMonth());
-        Long nonAffectesCount = extractionDonneesRepository.countNonAffectesByDateRange(ym.atDay(1), ym.atEndOfMonth());
-        Long medecinsIdentifies = extractionDonneesRepository.countMedecinsDistinctsByDateRange(ym.atDay(1), ym.atEndOfMonth());
+        List<Medecin> allMedecins = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m))
+            .toList();
+        List<Long> medecinIdsIdentifiables = allMedecins.stream().map(Medecin::getId).filter(Objects::nonNull).toList();
+        Long caPortefeuille = medecinIdsIdentifiables.isEmpty() ? 0L
+            : extractionDonneesRepository.sumPrixAPayerForIdentifiedDoctorsByDateRange(ym.atDay(1), ym.atEndOfMonth(), medecinIdsIdentifiables);
+        Long nonAffectesCount = medecinIdsIdentifiables.isEmpty() ? casMoisTotal
+            : extractionDonneesRepository.countCasesForUnidentifiedDoctorsByDateRange(ym.atDay(1), ym.atEndOfMonth(), medecinIdsIdentifiables);
+        Long caNonAffectes = medecinIdsIdentifiables.isEmpty() ? caActuel
+            : extractionDonneesRepository.sumPrixAPayerForUnidentifiedDoctorsByDateRange(ym.atDay(1), ym.atEndOfMonth(), medecinIdsIdentifiables);
+        Long medecinsIdentifies = medecinIdsIdentifiables.isEmpty() ? 0L
+            : extractionDonneesRepository.countIdentifiedDoctorsByDateRange(ym.atDay(1), ym.atEndOfMonth(), medecinIdsIdentifiables);
         if (casMoisTotal == null) casMoisTotal = 0L;
         if (caPortefeuille == null) caPortefeuille = 0L;
         if (nonAffectesCount == null) nonAffectesCount = 0L;
+        if (caNonAffectes == null) caNonAffectes = 0L;
         if (medecinsIdentifies == null) medecinsIdentifies = 0L;
 
         LocalDate ytdStart = LocalDate.of(ym.getYear(), 1, 1);
@@ -57,9 +90,7 @@ public class BridgeToGoalService {
         int moisEcoules = ym.getMonthValue();
         int moisRestants = 12 - moisEcoules;
         long caMoyenMensuel = moisEcoules > 0 ? Math.round((double) caYtdReel / moisEcoules) : 0L;
-        long runRateAnnuel = caMoyenMensuel * 12L;
-
-        List<Medecin> allMedecins = medecinRepository.findAll();
+        long runRateAnnuel = BridgeToGoalPolicy.runRateAnnuel(caYtdReel, moisEcoules);
 
         int nbOnboarding = 0;
         int nbRetention = 0;
@@ -70,10 +101,14 @@ public class BridgeToGoalService {
         int nbSegmentD = 0;
         Map<String, Long> caParSegment = new HashMap<>();
         Map<String, Integer> medecinsParSegment = new HashMap<>();
+        Map<Long, Long> caParMedecin = new HashMap<>();
+        Map<String, Map<String, Integer>> opportunitesParTypeEtSegment = new HashMap<>();
+        Map<String, Map<String, Long>> caParTypeEtSegment = new HashMap<>();
 
         for (Object[] row : extractionDonneesRepository.sumCaByMedecinAndDateRange(ym.atDay(1), ym.atEndOfMonth())) {
             Long medecinId = ((Number) row[0]).longValue();
             long ca = ((Number) row[1]).longValue();
+            caParMedecin.put(medecinId, ca);
             allMedecins.stream().filter(m -> medecinId.equals(m.getId())).findFirst().ifPresent(m -> {
                 String segment = m.getSegment() != null ? m.getSegment().toUpperCase() : "D";
                 caParSegment.merge(segment, ca, Long::sum);
@@ -92,6 +127,22 @@ public class BridgeToGoalService {
             }
             medecinsParSegment.merge(seg, 1, Integer::sum);
 
+            long caMedecin = caParMedecin.getOrDefault(m.getId(), 0L);
+            if ("ONBOARDING".equals(st)) {
+                ajouterOpportunite(opportunitesParTypeEtSegment, caParTypeEtSegment, "ONBOARDING", seg, caMedecin);
+            }
+            if ("RETENTION".equals(st) || "SURVEILLANCE".equals(st)) {
+                ajouterOpportunite(opportunitesParTypeEtSegment, caParTypeEtSegment, "RETENTION", seg, caMedecin);
+            }
+            if (m.getRisqueUrgence() == com.vactis.model.medecin.RisqueUrgence.URGENT
+                    && ("A".equals(seg) || "B".equals(seg))) {
+                ajouterOpportunite(opportunitesParTypeEtSegment, caParTypeEtSegment, "SILENCE", seg, caMedecin);
+            }
+            if (("A".equals(seg) || "B".equals(seg))
+                    && ("ACTIF_STABLE".equals(st) || "PROGRESSION".equals(st) || "ACTIF".equals(st))) {
+                ajouterOpportunite(opportunitesParTypeEtSegment, caParTypeEtSegment, "DEVELOPPEMENT", seg, caMedecin);
+            }
+
             if ("ONBOARDING".equals(st)) {
                 nbOnboarding++;
             } else if ("RETENTION".equals(st) || "SURVEILLANCE".equals(st)) {
@@ -101,7 +152,8 @@ public class BridgeToGoalService {
             }
         }
 
-        long nbReclamationsBloquantes = reclamationRepository.countByStatut(StatutReclamation.OUVERTE);
+        long nbReclamationsBloquantes = reclamationRepository.countByStatut(StatutReclamation.A_TRAITER)
+            + reclamationRepository.countByStatut(StatutReclamation.OUVERTE);
 
         // Modélisation des composantes du Bridge
         // 1. Gain Onboarding : estimation progressive (environ 1 200 € par médecin onboarding)
@@ -113,6 +165,20 @@ public class BridgeToGoalService {
         // 3. Gain Développement : levier sur Segments A & B (environ 800 € par compte A/B)
         long gainDeveloppement = nbDeveloppement * 800L;
 
+        List<BridgeOpportunityItem> opportunites = new ArrayList<>();
+        ajouterLignesOpportunite(opportunites, opportunitesParTypeEtSegment, caParTypeEtSegment,
+            "RETENTION", "Rétention / baisse activité", gainRetention,
+            "Potentiel théorique à confirmer après diagnostic terrain.");
+        ajouterLignesOpportunite(opportunites, opportunitesParTypeEtSegment, caParTypeEtSegment,
+            "SILENCE", "Silence élevé / critique Segment A/B", 0L,
+            "Signal de rupture à qualifier ; ce bloc n'ajoute pas de potentiel au total.");
+        ajouterLignesOpportunite(opportunites, opportunitesParTypeEtSegment, caParTypeEtSegment,
+            "DEVELOPPEMENT", "Sous-exploitation / développement", gainDeveloppement,
+            "Opportunité interne estimée à confirmer sur le terrain.");
+        ajouterLignesOpportunite(opportunites, opportunitesParTypeEtSegment, caParTypeEtSegment,
+            "ONBOARDING", "Onboarding / qualification", gainOnboarding,
+            "Potentiel d'intégration à qualifier avec le commercial.");
+
         // 4. Churn Estimé : attrition naturelle et risques non couverts + impact réclamations
         long churnEstime = Math.round((nbRetention * 1800.0 * 0.40) + (nbReclamationsBloquantes * 1500.0));
 
@@ -120,31 +186,18 @@ public class BridgeToGoalService {
         long caProjete = caActuel + gainOnboarding + gainRetention + gainDeveloppement - churnEstime;
         if (caProjete < 0) caProjete = 0L;
 
-        // Définition de la target budgétaire : priorité à l'objectif saisi, puis à l'objectif global admin, puis au calcul par défaut.
-        Long configuredTarget = null;
-        if (systemSettingsService != null) {
-            SystemSettings settings = systemSettingsService.getSettings();
-            if (settings != null && settings.getBridgeGoalTarget() != null && settings.getBridgeGoalTarget() > 0) {
-                configuredTarget = settings.getBridgeGoalTarget();
-            }
-        }
-
-        long targetBudget = (targetBudgetParam != null && targetBudgetParam > 0)
-                ? targetBudgetParam
-                : (configuredTarget != null ? configuredTarget : Math.round(caActuel > 0 ? caActuel * 1.12 : 50000L));
-
-        long gap = Math.max(0L, targetBudget - caProjete);
+        long gap = Math.max(0L, effectiveMonthlyTarget - caProjete);
         long objectifYtdProratise = Math.round((double) targetBudget * moisEcoules / 12.0);
         long varianceYtd = caYtdReel - objectifYtdProratise;
         double varianceYtdPct = objectifYtdProratise > 0
             ? Math.round((double) varianceYtd / objectifYtdProratise * 1000.0) / 10.0
             : 0.0;
-        long gapProjete = Math.max(0L, targetBudget - runRateAnnuel);
-        long effortAdditionnelMensuel = moisRestants > 0
-            ? Math.round((double) gapProjete / moisRestants)
-            : gapProjete;
+        long gapProjete = BridgeToGoalPolicy.gapProjete(targetBudget, runRateAnnuel);
+        long effortAdditionnelMensuel = BridgeToGoalPolicy.effortMensuel(gapProjete, moisRestants);
 
         long potentielRestant = Math.max(0L, gapProjete - (gainOnboarding + gainRetention + gainDeveloppement));
+        double couverturePotentiel = BridgeToGoalPolicy.couverturePourcent(
+            gainOnboarding + gainRetention + gainDeveloppement, gapProjete);
         long caMoyenSegmentA = moyenneSegment(caParSegment, medecinsParSegment, "A");
         long caMoyenSegmentB = moyenneSegment(caParSegment, medecinsParSegment, "B");
         long caMoyenSegmentC = moyenneSegment(caParSegment, medecinsParSegment, "C");
@@ -153,12 +206,13 @@ public class BridgeToGoalService {
         // Actions requises : estimation basée sur 1 500 € de CA incrémental moyen par action menée avec succès
         int actionsRequises = gap > 0 ? (int) Math.ceil((double) gap / 1500.0) : 0;
 
-        double tauxAtteinte = targetBudget > 0 ? Math.round(((double) caProjete / targetBudget * 100.0) * 10.0) / 10.0 : 100.0;
+        long comparisonTarget = effectiveMonthlyTarget;
+        double tauxAtteinte = comparisonTarget > 0 ? Math.round(((double) caProjete / comparisonTarget * 100.0) * 10.0) / 10.0 : 100.0;
 
         String statutTrajectoire;
         if (gap == 0) {
             statutTrajectoire = "ATTEINT";
-        } else if (caProjete >= (targetBudget * 0.85)) {
+        } else if (caProjete >= (comparisonTarget * 0.85)) {
             statutTrajectoire = "TENDU";
         } else {
             statutTrajectoire = "CRITIQUE";
@@ -173,6 +227,11 @@ public class BridgeToGoalService {
                 .churnEstime(churnEstime)
                 .caProjete(caProjete)
                 .targetBudget(targetBudget)
+                .annualTargetBudget(targetBudget)
+                .monthlyTargetBudget(effectiveMonthlyTarget)
+                .previousMonthRevenue(previousMonthRevenue)
+                .monthlyTargetMethod(monthlyTarget == null ? null : monthlyTarget.getMethod())
+                .monthlyTargetInputValue(monthlyTarget == null ? null : monthlyTarget.getInputValue().doubleValue())
                 .gap(gap)
                 .actionsRequises(actionsRequises)
                 .statutTrajectoire(statutTrajectoire)
@@ -197,11 +256,13 @@ public class BridgeToGoalService {
                 .moisRestants(moisRestants)
                 .effortAdditionnelMensuel(effortAdditionnelMensuel)
                 .statutYtd(varianceYtd >= 0 ? "EN AVANCE" : (varianceYtdPct >= -10.0 ? "RETARD MODERE" : "RETARD IMPORTANT"))
+                .decisionCouverture(BridgeToGoalPolicy.decisionCouverture(couverturePotentiel))
                 .nbMedecinsSegmentA(nbSegmentA)
                 .nbMedecinsSegmentB(nbSegmentB)
                 .nbMedecinsSegmentC(nbSegmentC)
                 .nbMedecinsSegmentD(nbSegmentD)
                 .nonAffectesCount(nonAffectesCount)
+                .caNonAffectes(caNonAffectes)
                 .medecinsIdentifies(medecinsIdentifies)
                 .caMoyenSegmentA(caMoyenSegmentA)
                 .caMoyenSegmentB(caMoyenSegmentB)
@@ -211,8 +272,55 @@ public class BridgeToGoalService {
                 .nouveauxMedecinsSegmentB(estimerNouveauxMedecins(potentielRestant, caMoyenSegmentB))
                 .nouveauxMedecinsSegmentC(estimerNouveauxMedecins(potentielRestant, caMoyenSegmentC))
                 .nouveauxMedecinsSegmentD(estimerNouveauxMedecins(potentielRestant, caMoyenSegmentD))
+                .opportunites(opportunites)
                 .build();
     }
+
+            private void ajouterOpportunite(
+                Map<String, Map<String, Integer>> comptes,
+                Map<String, Map<String, Long>> chiffresAffaires,
+                String type,
+                String segment,
+                long ca
+            ) {
+            comptes.computeIfAbsent(type, ignored -> new HashMap<>()).merge(segment, 1, Integer::sum);
+            chiffresAffaires.computeIfAbsent(type, ignored -> new HashMap<>()).merge(segment, ca, Long::sum);
+            }
+
+            private void ajouterLignesOpportunite(
+                List<BridgeOpportunityItem> resultat,
+                Map<String, Map<String, Integer>> comptes,
+                Map<String, Map<String, Long>> chiffresAffaires,
+                String type,
+                String libelle,
+                long potentielTotal,
+                String description
+            ) {
+            Map<String, Integer> parSegment = comptes.getOrDefault(type, Map.of());
+            int totalMedecins = parSegment.values().stream().mapToInt(Integer::intValue).sum();
+            if (totalMedecins == 0) return;
+
+            List<String> segments = List.of("A", "B", "C", "D").stream()
+                .filter(parSegment::containsKey)
+                .toList();
+            long potentielDistribue = 0L;
+            for (int index = 0; index < segments.size(); index++) {
+                String segment = segments.get(index);
+                int medecins = parSegment.get(segment);
+                long partPotentiel = index == segments.size() - 1
+                    ? potentielTotal - potentielDistribue
+                    : Math.round((double) potentielTotal * medecins / totalMedecins);
+                potentielDistribue += partPotentiel;
+                resultat.add(new BridgeOpportunityItem(
+                    type,
+                    libelle,
+                    segment,
+                    medecins,
+                    chiffresAffaires.getOrDefault(type, Map.of()).getOrDefault(segment, 0L),
+                    partPotentiel,
+                    description));
+            }
+            }
 
     private long moyenneSegment(Map<String, Long> caParSegment, Map<String, Integer> medecinsParSegment, String segment) {
         int count = medecinsParSegment.getOrDefault(segment, 0);
@@ -220,10 +328,7 @@ public class BridgeToGoalService {
     }
 
     private int estimerNouveauxMedecins(long gap, long caMoyenMensuel) {
-        long caAvecMonteeEnCharge = Math.round(caMoyenMensuel * 0.50);
-        return gap > 0 && caAvecMonteeEnCharge > 0
-                ? (int) Math.ceil((double) gap / caAvecMonteeEnCharge)
-                : 0;
+        return BridgeToGoalPolicy.nouveauxMedecinsNecessaires(gap, caMoyenMensuel, 0.50);
     }
 
     private YearMonth determinerMoisReference(String moisParam) {

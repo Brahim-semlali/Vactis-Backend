@@ -1,0 +1,18 @@
+BEGIN;
+
+ALTER TABLE medecins
+    ADD COLUMN IF NOT EXISTS ca_mois_analyse DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS cas_mois_analyse DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS date_reference_indicateurs DATE,
+    ADD COLUMN IF NOT EXISTS date_derniere_activite_calcul DATE,
+    ADD COLUMN IF NOT EXISTS nombre_mois_reference INTEGER,
+    ADD COLUMN IF NOT EXISTS source_rythme VARCHAR(30),
+    ADD COLUMN IF NOT EXISTS classe_silence VARCHAR(30),
+    ADD COLUMN IF NOT EXISTS urgence_brute DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS perte_ca DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS seuil_impact DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS facteur_materialite DOUBLE PRECISION;
+ALTER TABLE medecins
+    ADD COLUMN IF NOT EXISTS rang_urgence INTEGER;
+
+COMMIT;

@@ -140,7 +140,7 @@ public class ActiviteImpactService {
 
         List<RetourTerrain> tousRetours = retourTerrainRepository.findByDateVisiteBetweenWithFetch(start, end);
         enrichAndLinkVactisActions(tousRetours, ym.format(YYYY_MM));
-        List<Medecin> medecins = medecinRepository.findAll();
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers();
 
         // Calcul des statuts avant (mois M) et après (mois M+1)
         Map<Long, String> statutsM  = portefeuilleService.buildStatutMapForMonth(ym, medecins);
@@ -260,7 +260,7 @@ public class ActiviteImpactService {
                 .filter(this::isVactis)
                 .collect(Collectors.toList());
 
-        List<Medecin> medecins = medecinRepository.findAll();
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers();
 
         // Calcul batch des statuts M et M+1
         Map<Long, String> statutsM  = portefeuilleService.buildStatutMapForMonth(ym, medecins);
@@ -427,8 +427,9 @@ public class ActiviteImpactService {
         // On interroge directement la base : si des données existent pour M+1 → calculable
         YearMonth ymNext = ym.plusMonths(1);
         List<LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
-        return dates.stream()
-                .anyMatch(d -> YearMonth.from(d).equals(ymNext));
+        boolean moisSuivantCloture = !ymNext.atEndOfMonth().isAfter(LocalDate.now());
+        return moisSuivantCloture && dates.stream()
+            .anyMatch(d -> YearMonth.from(d).equals(ymNext));
     }
 
     private boolean isVactis(RetourTerrain r) {
@@ -472,7 +473,7 @@ public class ActiviteImpactService {
 
         List<RetourTerrain> retours = retourTerrainRepository.findByDateVisiteBetweenWithFetch(start, end);
         enrichAndLinkVactisActions(retours, ym.format(YYYY_MM));
-        List<Medecin> medecins = medecinRepository.findAll();
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers();
 
         Map<Long, String> statutsM  = portefeuilleService.buildStatutMapForMonth(ym, medecins);
         Map<Long, String> statutsM1 = portefeuilleService.buildStatutMapForMonth(ym.plusMonths(1), medecins);
@@ -483,14 +484,13 @@ public class ActiviteImpactService {
         long fauxPositifs = 0;
         long pertesConfirmees = 0;
         long resiliencesImprevues = 0;
+        long situationsStables = 0;
+        long qualificationsNonConfirmees = 0;
+        long nonObservables = 0;
         List<ConcordanceQualificationResponse.ConcordanceItem> details = new ArrayList<>();
 
         for (RetourTerrain r : retours) {
             QualificationVisite q = qualif(r);
-            if (q == QualificationVisite.NON_RENSEIGNE || q == QualificationVisite.NEUTRE || q == QualificationVisite.CONGE_ABSENCE) {
-                continue;
-            }
-
             Medecin m = r.getMedecin();
             if (m == null) continue;
 
@@ -498,29 +498,40 @@ public class ActiviteImpactService {
             String statM1 = apresCalculable ? statutsM1.getOrDefault(m.getId(), "inactif") : null;
             String evolution = calculerEvolution(m.getId(), ym, statutsM, statutsM1, medecinsAvecDonneesM1, apresCalculable);
 
-            String diagnostic;
-            boolean concordant;
+            if ("NON_OBSERVABLE".equals(evolution)) {
+                QualificationEvolutionPolicy.Resultat comparaison =
+                        QualificationEvolutionPolicy.comparer(q, evolution, statM1);
+                nonObservables++;
+                details.add(ConcordanceQualificationResponse.ConcordanceItem.builder()
+                        .retourId(r.getId())
+                        .medecinId(m.getId())
+                        .nomMedecin(buildNom(m))
+                        .commercial(commercialSafe(r))
+                        .dateVisite(r.getDateVisite() != null ? r.getDateVisite().toString() : "—")
+                        .qualificationDeclaree(q.name())
+                        .obstaclePrincipal(r.getObstaclePrincipal() != null ? r.getObstaclePrincipal().name() : null)
+                        .statutAvant(statM)
+                        .statutApres(null)
+                        .evolutionObservee(evolution)
+                        .diagnosticConcordance(comparaison.diagnostic())
+                        .estConcordant(false)
+                        .build());
+                continue;
+            }
+            if (q == QualificationVisite.NON_RENSEIGNE || q == QualificationVisite.CONGE_ABSENCE) continue;
 
-            if (q == QualificationVisite.FAVORABLE) {
-                if ("FAVORABLE".equals(evolution) || "STABLE".equals(evolution)) {
-                    diagnostic = "SUCCES_CONFIRME";
-                    concordant = true;
-                    succesConfirmes++;
-                } else {
-                    diagnostic = "FAUX_POSITIF";
-                    concordant = false;
-                    fauxPositifs++;
-                }
-            } else { // DEFAVORABLE ou RECLAMATION
-                if ("DEFAVORABLE".equals(evolution)) {
-                    diagnostic = "PERTE_CONFIRMEE";
-                    concordant = true;
-                    pertesConfirmees++;
-                } else {
-                    diagnostic = "RESILIENCE_INATTENDUE";
-                    concordant = false;
-                    resiliencesImprevues++;
-                }
+            QualificationEvolutionPolicy.Resultat comparaison =
+                    QualificationEvolutionPolicy.comparer(q, evolution, statM1);
+            String diagnostic = comparaison.diagnostic();
+            boolean concordant = comparaison.concordant();
+            switch (diagnostic) {
+                case "SUCCES_CONFIRME" -> succesConfirmes++;
+                case "FAUX_POSITIF" -> fauxPositifs++;
+                case "PERTE_CONFIRMEE" -> pertesConfirmees++;
+                case "RESILIENCE_INATTENDUE" -> resiliencesImprevues++;
+                case "SITUATION_STABLE", "STABLE" -> situationsStables++;
+                case "NON_OBSERVABLE" -> nonObservables++;
+                default -> qualificationsNonConfirmees++;
             }
 
             details.add(ConcordanceQualificationResponse.ConcordanceItem.builder()
@@ -540,7 +551,7 @@ public class ActiviteImpactService {
         }
 
         long total = details.size();
-        long totalConcordants = succesConfirmes + pertesConfirmees;
+        long totalConcordants = succesConfirmes + pertesConfirmees + situationsStables;
         double tauxFiabilite = total > 0 ? Math.round((totalConcordants * 100.0 / total) * 10.0) / 10.0 : 0.0;
 
         return ConcordanceQualificationResponse.builder()
@@ -550,6 +561,9 @@ public class ActiviteImpactService {
                 .fauxPositifs(fauxPositifs)
                 .pertesConfirmees(pertesConfirmees)
                 .resiliencesImprevues(resiliencesImprevues)
+                .situationsStables(situationsStables)
+                .qualificationsNonConfirmees(qualificationsNonConfirmees)
+                .nonObservables(nonObservables)
                 .tauxFiabiliteCommerciale(tauxFiabilite)
                 .details(details)
                 .build();

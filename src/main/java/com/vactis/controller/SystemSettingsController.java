@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
+import java.math.BigDecimal;
 
 @RestController
 @RequestMapping("/api/admin/settings")
@@ -34,8 +36,12 @@ public class SystemSettingsController {
     }
 
     @PutMapping("/bridge-goal-target")
-    public Long updateBridgeGoalTarget(@RequestParam Long target) {
-        return service.updateBridgeGoalTarget(target);
+    @PreAuthorize("hasRole('ADMIN')")
+    public Long updateBridgeGoalTarget(
+            @RequestParam BigDecimal target,
+            @RequestParam(defaultValue = "DIRECT") String method
+    ) {
+        return service.updateBridgeGoalTarget(target, method);
     }
 
 }

@@ -79,6 +79,27 @@ public class Action {
     @Column(columnDefinition = "TEXT")
     private String commentaire;
 
+    @Column(name = "source_recommandation", length = 40)
+    private String sourceRecommandation;
+
+    @Column(name = "decision_recommandation", length = 40)
+    private String decisionRecommandation;
+
+    @Column(name = "reclamation_id")
+    private Long reclamationId;
+
+    @Column(name = "date_depart")
+    private LocalDate dateDepart;
+
+    @Column(name = "date_retour_prevue")
+    private LocalDate dateRetourPrevue;
+
+    @Column(name = "date_revue")
+    private LocalDate dateRevue;
+
+    @Column(name = "suspension_levee")
+    private Boolean suspensionLevee = false;
+
     @Column(name = "reserved_by", length = 255)
     private String reservedBy;
 
@@ -131,6 +152,15 @@ public class Action {
 
     @Transient
     private Integer joursSansActivite;
+
+    @Transient
+    private String commentaireMoteurResume;
+
+    @Transient
+    private String commentaireMoteurTitre;
+
+    @Transient
+    private String commentaireMoteurDetail;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -103,7 +103,7 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
         Roles commerciale = roleRepository.findByNameRoleIgnoreCase("COMMERCIALE")
             .orElseThrow(() -> new IllegalStateException("Le rôle COMMERCIALE n'existe pas"));
         commerciale.setMenuItems(menuItemRepository.findAll().stream()
-            .filter(menu -> List.of("/accueil", "/medecins", "/actions", "/lecture-activite", "/alertes-hebdo", "/recommandations", "/bridge-to-goal").contains(menu.getRoute()))
+            .filter(menu -> List.of("/accueil", "/medecins", "/actions", "/lecture-activite", "/alertes-hebdo", "/recommandations", "/bridge-to-goal", "/reclamations").contains(menu.getRoute()))
             .toList());
         roleRepository.save(commerciale);
     }
@@ -153,7 +153,16 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
 
         ensureMenuItem("Rôles", "roles", "/roles", 16, "Administration");
         ensureMenuItem("Users", "users", "/users", 17, "Administration");
-        ensureMenuItem("Paramètres système", "settings", "/parametres-systeme", 18, "Administration");
+        ensureMenuItem("Importation et exportation Excel", "file-spreadsheet", "/import-export-excel", 18, "Administration");
+        ensureMenuItem("Paramètres système", "settings", "/parametres-systeme", 19, "Administration");
+        ensureMenuItem("Réclamations", "alert-circle", "/reclamations", 20, "Terrain & Actions");
+
+        menuItemRepository.findAll().stream()
+                .filter(menu -> "Exports analytiques".equalsIgnoreCase(menu.getLabel()))
+                .forEach(menu -> {
+                    menu.setIsVisible(false);
+                    menuItemRepository.save(menu);
+                });
     }
 
     private void ensureMenuItem(String label, String icon, String route, int order, String principalNom) {

@@ -23,6 +23,9 @@ public class ConcordanceQualificationResponse {
     private long fauxPositifs;        // Déclaré Favorable + Réel Baisse
     private long pertesConfirmees;    // Déclaré Défavorable + Réel Baisse
     private long resiliencesImprevues;// Déclaré Défavorable + Réel Hausse
+    private long situationsStables;
+    private long qualificationsNonConfirmees;
+    private long nonObservables;
     private double tauxFiabiliteCommerciale; // % de concordance globale
     private List<ConcordanceItem> details;
 

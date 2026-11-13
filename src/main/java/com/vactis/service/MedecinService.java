@@ -15,6 +15,8 @@ import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
 
 import com.vactis.service.Activite.SegmentationService;
+import com.vactis.service.Activite.ActivitePortefeuilleService;
+import com.vactis.service.Activite.StatutMensuelPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,7 @@ public class MedecinService {
     private final ExcelImportService excelImportService;
     private final ControleService controleService;
     private final SegmentationService segmentationService;
+    private final ActivitePortefeuilleService activitePortefeuilleService;
     private final ExtractionDonneesRepository extractionDonneesRepository;
 
     // Déclenche la synchronisation des médecins depuis le fichier Excel fictif
@@ -49,7 +52,7 @@ public class MedecinService {
 
     // Retourne tous les médecins du portefeuille
     public List<Medecin> findAll(){
-        return medecinRepository.findAll();
+        return medecinsEligibles();
     }
 
     // Recherche un médecin par son code unique (ex: MED001)
@@ -122,8 +125,8 @@ public class MedecinService {
 
     // Retourne uniquement les médecins géolocalisés pour la carte Zone intelligence
     public List<MedecinGeolocaliseDto> getMedecinsGeolocalises() {
-        return medecinRepository.findByLatitudeIsNotNullAndLongitudeIsNotNull()
-                .stream()
+        return medecinsEligibles().stream()
+            .filter(m -> m.getLatitude() != null && m.getLongitude() != null)
                 .map(m -> new MedecinGeolocaliseDto(
                         m.getId(),
                         m.getCodeMedecin(),
@@ -142,8 +145,8 @@ public class MedecinService {
 
     // Retourne les médecins sans coordonnées complètes pour la complétion admin
     public List<MedecinSansLocalisationDto> getMedecinsSansLocalisation() {
-        return medecinRepository.findByLatitudeIsNullOrLongitudeIsNull()
-                .stream()
+        return medecinsEligibles().stream()
+            .filter(m -> m.getLatitude() == null || m.getLongitude() == null)
                 .map(m -> new MedecinSansLocalisationDto(
                         m.getId(),
                         m.getCodeMedecin(),
@@ -191,27 +194,30 @@ public class MedecinService {
 
     // Retourne les médecins par statut de performance
     public List<Medecin> findByStatut(StatutMedecin statutMedecin){
-        return medecinRepository.findByStatut(statutMedecin);
+        return medecinRepository.findByStatut(statutMedecin).stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
     }
 
     // Compte le nombre total de médecins en base
     public Long countAllMedecins(){
-        return medecinRepository.countAllMedecins();
+        return (long) medecinsEligibles().size();
     }
 
     // Retourne les médecins d'un segment donné
     public List<Medecin> findMedecinsBySegement(String segment){
-        return medecinRepository.findBySegment(segment);
+        return medecinRepository.findBySegment(segment).stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
     }
 
     // Compte les médecins par statut de pilotage commercial
     public Long countAllByStatutPilotage(StatutPilotage statutPilotage){
-        return medecinRepository.countAllByStatutPilotage(statutPilotage);
+        return (long) findMedecinsByStatusPilotage(statutPilotage).size();
     }
 
     // Retourne les médecins par statut de pilotage commercial
     public List<Medecin> findMedecinsByStatusPilotage(StatutPilotage statutPilotage){
-        return medecinRepository.findAllByStatutPilotage(statutPilotage);
+        return medecinRepository.findAllByStatutPilotage(statutPilotage).stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
     }
 
     // Recherche les médecins selon des critères multiples (nom, segment, spécialité, etc.)
@@ -234,14 +240,15 @@ public class MedecinService {
                 risqueUrgence,
                 normalize(organisme),
                 sansNoteInput
-        );
+            ).stream().filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
     }
 
     // Retourne les options de filtres distinctes (spécialités, organismes, statuts, segments)
     public MedecinFilterOptionsResponse getFilterOptions(){
         MedecinFilterOptionsResponse filters = new MedecinFilterOptionsResponse();
-        filters.setSpecialites(medecinRepository.findDistinctSpecialites());
-        filters.setOrganismes(medecinRepository.findDistinctOrganismes());
+        List<Medecin> medecins = medecinsEligibles();
+        filters.setSpecialites(medecins.stream().map(Medecin::getSpecialite).filter(s -> s != null && !s.isBlank()).distinct().sorted().toList());
+        filters.setOrganismes(medecins.stream().map(Medecin::getOrganisme).filter(o -> o != null && !o.isBlank()).distinct().sorted().toList());
         filters.setStatuts(controleService.getEtatsActifs(TypeControle.STATUT));
         filters.setSegments(controleService.getEtatsActifs(TypeControle.SEGEMENTS));
         return filters;
@@ -250,21 +257,19 @@ public class MedecinService {
     // Calcule les KPIs du portefeuille médecins (total, segments, pilotage, actions en cours)
     public MedecinKpiResponse getKpis(){
         MedecinKpiResponse kpis = new MedecinKpiResponse();
-        kpis.setTotal(medecinRepository.countAllMedecins());
+        List<Medecin> medecins = medecinsEligibles();
+        kpis.setTotal((long) medecins.size());
         List<String> prioritySegments = controleService.getEtatsActifs(TypeControle.SEGEMENTS);
         if (prioritySegments.size() >= 2) {
             prioritySegments = prioritySegments.subList(0, prioritySegments.size() - 1);
         }
-        kpis.setSegmentsAB(
-                prioritySegments.isEmpty()
-                        ? 0L
-                        : medecinRepository.countBySegmentIn(prioritySegments)
-        );
-        kpis.setSurveillance(medecinRepository.countByStatutIgnoreCase("SURVEILLANCE"));
-        kpis.setOnboarding(medecinRepository.countByStatutIgnoreCase("ONBOARDING"));
-        kpis.setSilenceCritique(medecinRepository.countByStatutIgnoreCase("SILENCE_CRITIQUE"));
+        List<String> eligibleSegments = prioritySegments;
+        kpis.setSegmentsAB(medecins.stream().filter(m -> eligibleSegments.contains(m.getSegment())).count());
+        kpis.setSurveillance(medecins.stream().filter(m -> "SURVEILLANCE".equalsIgnoreCase(m.getStatut())).count());
+        kpis.setOnboarding(medecins.stream().filter(m -> "ONBOARDING".equalsIgnoreCase(m.getStatut())).count());
+        kpis.setSilenceCritique(medecins.stream().filter(m -> "SILENCE_CRITIQUE".equalsIgnoreCase(m.getStatut())).count());
         kpis.setActionsEnCours(actionService.countPlanifiees());
-        kpis.setSansNoteInput(medecinRepository.countByNoteInputIsNull());
+        kpis.setSansNoteInput(medecins.stream().filter(m -> m.getNoteInput() == null).count());
         return kpis;
     }
 
@@ -277,17 +282,27 @@ public class MedecinService {
         return switch (normalized) {
             case "SILENCE_CRITIQUE" -> StatutPilotage.RETENTION;
             case "EXCLU" -> StatutPilotage.INACTIF;
-            case "ACTIF_STABLE", "PROGRESSION", "SURVEILLANCE", "RETENTION", "ONBOARDING", "A_REACTIVER", "INACTIF", "ACTIF" -> StatutPilotage.valueOf(normalized);
+            case "ACTIF_STABLE", "PROGRESSION", "SURVEILLANCE", "RETENTION", "ONBOARDING", "ACTIVITE_IRREGULIERE", "A_REACTIVER", "INACTIF", "ACTIF" -> StatutPilotage.valueOf(normalized);
             default -> StatutPilotage.ACTIF_STABLE;
         };
     }
 
     // Recalcule dynamiquement les statuts (selon les règles Controle) et segments (A/B/C/D) de tous les médecins
     public void recalculerStatutsEtSegmentsDynamiques() {
-        List<Medecin> medecins = medecinRepository.findAll();
+        // Utilise la fin du dernier mois avec des données en base,
+        // et non la date du jour, pour ne pas analyser un mois courant vide.
+        List<java.time.LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
+        java.time.LocalDate dateRef = dates.isEmpty()
+                ? java.time.LocalDate.now()
+                : java.time.YearMonth.from(dates.get(0)).atEndOfMonth();
+        recalculerStatutsEtSegmentsDynamiques(dateRef);
+    }
+
+    public void recalculerStatutsEtSegmentsDynamiques(LocalDate dateReference) {
+        List<Medecin> medecins = medecinsEligibles();
         if (medecins.isEmpty()) return;
 
-        YearMonth ymM = YearMonth.now();
+        YearMonth ymM = YearMonth.from(dateReference);
         YearMonth ymMm1 = ymM.minusMonths(1);
 
         Map<String, Long> caM = buildCaMapForMonth(ymM);
@@ -310,23 +325,29 @@ public class MedecinService {
         }
 
         for (Medecin m : medecins) {
+            m.setIsProfilIrregulier(false);
             String key = String.valueOf(m.getId());
             long valM = caM.getOrDefault(key, 0L);
             long valMm1 = caMm1.getOrDefault(key, 0L);
+                boolean hasExtractionHistory = totalCasMap.containsKey(m.getId())
+                    || caM.containsKey(key) || caMm1.containsKey(key)
+                    || caMm2.containsKey(key) || caMm3.containsKey(key)
+                    || casM.containsKey(key) || casMm1.containsKey(key)
+                    || casMm2.containsKey(key) || casMm3.containsKey(key);
 
-            m.setCaMois((int) valM);
-            m.setCaBaseline((int) valMm1);
-            m.setTotalCas(totalCasMap.getOrDefault(m.getId(), 0L).intValue());
+                m.setCaMois(hasExtractionHistory ? (int) valM : null);
+                m.setCaBaseline(hasExtractionHistory ? (int) valMm1 : null);
+                m.setTotalCas(totalCasMap.containsKey(m.getId())
+                    ? totalCasMap.get(m.getId()).intValue() : null);
 
             String statutDynamique;
-            LocalDate limite60Jours = LocalDate.now().minusDays(60);
-            boolean actif60Jours = m.getDateDerniereActivite() != null && !m.getDateDerniereActivite().isBefore(limite60Jours);
+            boolean actif60Jours = StatutMensuelPolicy.activiteRecente(m.getDateDerniereActivite(), dateReference);
 
             if (Boolean.TRUE.equals(m.getIsAReactiverManuel()) && valM == 0) {
                 statutDynamique = "A_REACTIVER";
             } else if (valM == 0) {
                 statutDynamique = actif60Jours ? "RETENTION" : "INACTIF";
-            } else if (valMm1 == 0 && valM > 0) {
+            } else if (valM > 0 && estOnboardingRecent(m, dateReference)) {
                 statutDynamique = "ONBOARDING";
             } else {
                 double caReference = average(caMm1, caMm2, caMm3, key);
@@ -334,30 +355,19 @@ public class MedecinService {
                 double variationCa = ((valM - caReference) / Math.max(caReference, 300.0)) * 100.0;
                 double variationCas = ((casM.getOrDefault(key, 0L) - casReference)
                         / Math.max(casReference, 1.0)) * 100.0;
-                double variationMixte = (0.60 * variationCa) + (0.40 * variationCas);
+                double variationMixte = StatutMensuelPolicy.variationMixte(variationCa, variationCas);
+                statutDynamique = StatutMensuelPolicy.statutDepuisVariation(variationMixte);
 
-                if (variationMixte > 20.0) {
-                    statutDynamique = "PROGRESSION";
-                } else if (variationMixte >= -10.0) {
-                    statutDynamique = "ACTIF_STABLE";
-                } else if (variationMixte >= -40.0) {
-                    statutDynamique = "SURVEILLANCE";
-                } else {
-                    statutDynamique = "RETENTION";
-                }
-
-                // Section 4 — Activité Irrégulière : neutralisation des baisses pour prescripteurs à profil atypique régulier
-                if (("SURVEILLANCE".equals(statutDynamique) || "RETENTION".equals(statutDynamique))
-                        && isPrescripteurIrregulier(m, valM, caMm1.getOrDefault(key, 0L), caMm2.getOrDefault(key, 0L), caMm3.getOrDefault(key, 0L), casM.getOrDefault(key, 0L), casReference)) {
-                    m.setIsProfilIrregulier(true);
-                    statutDynamique = "ACTIF_STABLE";
-                } else {
-                    m.setIsProfilIrregulier(false);
-                }
             }
 
-            m.setCaMois((int) valM);
-            m.setCaBaseline((int) valMm1);
+            if (("SURVEILLANCE".equals(statutDynamique) || "RETENTION".equals(statutDynamique))
+                    && activitePortefeuilleService.estProfilActiviteIrreguliere(m, statutDynamique, dateReference)) {
+                m.setIsProfilIrregulier(true);
+                statutDynamique = "ACTIVITE_IRREGULIERE";
+            }
+
+            m.setCaMois(hasExtractionHistory ? (int) valM : null);
+            m.setCaBaseline(hasExtractionHistory ? (int) valMm1 : null);
 
             if (!statutDynamique.equalsIgnoreCase(m.getStatut())) {
                 m.setStatut(statutDynamique.toUpperCase());
@@ -375,56 +385,7 @@ public class MedecinService {
         }
 
         // Recalcul du score de valeur et des segments A/B/C/D selon la formule Anapath
-        segmentationService.recalculerSegmentationPortefeuille();
-    }
-
-    private boolean isPrescripteurIrregulier(
-            Medecin m,
-            long caCurr,
-            long caMm1,
-            long caMm2,
-            long caMm3,
-            long casCurr,
-            double casRef
-    ) {
-        if (m == null) return false;
-
-        // Condition 1 : Ancienneté >= 6 mois
-        boolean ancienneteOk = m.getDatePremiereCollaboration() != null
-                && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(LocalDate.now());
-        if (!ancienneteOk && m.getCreatedAt() != null) {
-            ancienneteOk = !m.getCreatedAt().toLocalDate().plusMonths(6).isAfter(LocalDate.now());
-        }
-        if (!ancienneteOk) return false;
-
-        // Condition 2 : Au moins 2 mois actifs parmi M-1, M-2, M-3
-        int moisActifs = (caMm1 > 0 ? 1 : 0) + (caMm2 > 0 ? 1 : 0) + (caMm3 > 0 ? 1 : 0);
-        if (moisActifs < 2) return false;
-
-        // Condition 3 : Variabilité historique >= 30%
-        long maxHist = Math.max(caMm1, Math.max(caMm2, caMm3));
-        long minHist = Math.min(caMm1, Math.min(caMm2, caMm3));
-        if (maxHist > 0 && ((double)(maxHist - minHist) / maxHist) < 0.30) return false;
-
-        // Condition 4 : Volume total de cas >= 5
-        if (m.getTotalCas() != null && m.getTotalCas() < 5) return false;
-
-        // Condition 5 : Activité non nulle sur le mois courant
-        if (caCurr <= 0) return false;
-
-        // Condition 6 : Panier moyen préservé (>= 65% de la référence)
-        if (casCurr > 0 && casRef > 0) {
-            double panierCurr = (double) caCurr / casCurr;
-            double caRefMoy = (caMm1 + caMm2 + caMm3) / 3.0;
-            double panierRef = caRefMoy / casRef;
-            if (panierRef > 0 && (panierCurr / panierRef) < 0.65) return false;
-        }
-
-        // Condition 7 : Absence de réclamation bloquante
-        if (m.getCommentaire() != null && m.getCommentaire().toLowerCase().contains("reclamation")) return false;
-
-        // Condition 8 : Statut non inactif
-        return m.getStatut() == null || !"INACTIF".equalsIgnoreCase(m.getStatut());
+        segmentationService.recalculerSegmentationPortefeuille(dateReference);
     }
 
     // Active ou désactive manuellement le statut "À réactiver" pour un médecin (Section 1)
@@ -452,6 +413,16 @@ public class MedecinService {
             }
         }
         return map;
+    }
+
+    private boolean estOnboardingRecent(Medecin medecin, LocalDate dateReference) {
+        LocalDate premiereActivite = medecin.getDatePremiereCollaboration();
+        if (premiereActivite == null) {
+            premiereActivite = extractionDonneesRepository.findDatesReceptionByMedecinId(medecin.getId())
+                    .stream().min(LocalDate::compareTo).orElse(null);
+        }
+        if (premiereActivite == null) return false;
+        return StatutMensuelPolicy.onboardingRecent(premiereActivite, dateReference);
     }
 
     private Map<String, Long> buildCasMapForMonth(YearMonth ym) {
@@ -495,7 +466,7 @@ public class MedecinService {
 
         MedecinMetaResponse meta = new MedecinMetaResponse();
         meta.setAffiches((long) items.size());
-        meta.setCharges(medecinRepository.countAllMedecins());
+        meta.setCharges((long) medecinsEligibles().size());
 
         MedecinPageResponse response = new MedecinPageResponse();
         response.setItems(items);
@@ -513,5 +484,10 @@ public class MedecinService {
 
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<Medecin> medecinsEligibles() {
+        return medecinRepository.findAllWithImportedDossiers().stream()
+                .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
     }
 }

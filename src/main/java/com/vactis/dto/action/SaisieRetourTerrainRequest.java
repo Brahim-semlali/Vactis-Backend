@@ -27,6 +27,9 @@ public class SaisieRetourTerrainRequest {
     /** Required for CONGE_ABSENCE when a return is known. */
     private LocalDate dateRetourPrevue;
 
+    /** Required for CONGE_ABSENCE when no return date is known. */
+    private LocalDate dateRevue;
+
     /** Mandatory if qualification = DEFAVORABLE (Section 5). */
     private String obstaclePrincipal;
 

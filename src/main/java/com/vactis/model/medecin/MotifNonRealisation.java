@@ -5,9 +5,17 @@ package com.vactis.model.medecin;
  */
 public enum MotifNonRealisation {
     MEDECIN_ABSENT,
+    MANQUE_DE_TEMPS,
+    VISITE_REPORTEE,
+    PRIORITE_MODIFIEE,
+    ADRESSE_INCORRECTE_INDISPONIBLE,
+    AUTRE,
+    @Deprecated
     REFUS_ACCUEIL,
+    @Deprecated
     SECRETARIAT_BLOQUANT,
+    @Deprecated
     REPORT_DEMANDE,
-    CONTRAINTE_PLANNING,
-    AUTRE
+    @Deprecated
+    CONTRAINTE_PLANNING
 }

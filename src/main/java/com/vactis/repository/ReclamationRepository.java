@@ -21,6 +21,8 @@ public interface ReclamationRepository extends JpaRepository<Reclamation, Long> 
 
     long countByStatut(StatutReclamation statut);
 
+    List<Reclamation> findByCommercialDeclarantOrderByDateDeclarationDesc(String commercialDeclarant);
+
     @Query("""
         select r from Reclamation r
         where (:statut is null or r.statut = :statut)

@@ -67,6 +67,9 @@ public class RetourTerrain {
         @Column(name = "date_retour_prevue")
         private LocalDate dateRetourPrevue;
 
+        @Column(name = "date_revue")
+        private LocalDate dateRevue;
+
     /** Obstacle principal obligatoire en cas de qualification DEFAVORABLE (Section 5). */
     @Enumerated(EnumType.STRING)
     @Column(name = "obstacle_principal", length = 30)

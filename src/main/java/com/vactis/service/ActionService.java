@@ -19,7 +19,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.vactis.model.Controle.TypeControle;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 import com.vactis.dto.action.SaisieRetourTerrainRequest;
 import com.vactis.dto.action.SaisieVisiteLibreRequest;
@@ -35,10 +39,12 @@ import com.vactis.repository.ExtractionDonneesRepository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.UUID;
 import com.vactis.dto.reclamation.ReclamationRequest;
 import com.vactis.model.reclamation.CategorieReclamation;
 import com.vactis.model.reclamation.PrioriteReclamation;
+import com.vactis.model.reclamation.Reclamation;
 import com.vactis.model.reclamation.StatutReclamation;
 import com.vactis.model.medecin.ObstaclePrincipal;
 
@@ -82,12 +88,14 @@ public class ActionService {
 
     // Retourne toutes les actions en base
     public List<Action> findAll() {
-        return actionRepository.findAll();
+        return eligibleActions();
     }
 
     // Recherche une action par son identifiant
     public Action findById(Long id) {
-        return actionRepository.findById(id).orElse(null);
+        Action action = actionRepository.findById(id).orElse(null);
+        return action == null || action.getMedecin() == null
+            || medecinRepository.isPseudoMedecin(action.getMedecin()) ? null : action;
     }
 
     // Recherche les actions selon plusieurs critères de filtrage
@@ -112,15 +120,17 @@ public class ActionService {
                 backlog,
                 normalize(commercial),
                 normalize(lieuOrganisme)
-        );
+            ).stream().filter(a -> a.getMedecin() != null
+                && !medecinRepository.isPseudoMedecin(a.getMedecin())).toList();
     }
 
     // Retourne les options de filtres distinctes (actions, commerciaux, lieux, statuts, segments)
     public ActionFilterOptionsResponse getFilterOptions() {
         ActionFilterOptionsResponse filters = new ActionFilterOptionsResponse();
-        filters.setActions(actionRepository.findDistinctActions());
-        filters.setCommerciaux(actionRepository.findDistinctCommerciaux());
-        filters.setLieuxOrganismes(actionRepository.findDistinctLieuxOrganismes());
+        List<Action> actions = eligibleActions();
+        filters.setActions(actions.stream().map(Action::getActionRecommandee).filter(Objects::nonNull).distinct().sorted().toList());
+        filters.setCommerciaux(actions.stream().map(Action::getCommercial).filter(Objects::nonNull).distinct().sorted().toList());
+        filters.setLieuxOrganismes(actions.stream().map(Action::getLieuOrganisme).filter(Objects::nonNull).distinct().sorted().toList());
         filters.setStatuts(controleService.getEtatsActifs(TypeControle.STATUT));
         filters.setSegments(controleService.getEtatsActifs(TypeControle.SEGEMENTS));
         return filters;
@@ -129,17 +139,18 @@ public class ActionService {
     // Calcule les KPIs des actions (total, planifiées, réalisées, backlog, urgence silence)
     public ActionKpiResponse getKpis() {
         ActionKpiResponse kpis = new ActionKpiResponse();
-        kpis.setActionsGenerees(actionRepository.countAllActions());
-        kpis.setPlanifiees(actionRepository.countByEtatAction(EtatAction.PLANIFIEE));
-        kpis.setVisites(actionRepository.countByEtatAction(EtatAction.REALISEE));
-        kpis.setBacklog(actionRepository.countByBacklogTrue());
-        kpis.setUrgenceSilence(actionRepository.countByUrgenceSilenceTrue());
+        List<Action> actions = eligibleActions();
+        kpis.setActionsGenerees((long) actions.size());
+        kpis.setPlanifiees(actions.stream().filter(a -> a.getEtatAction() == EtatAction.PLANIFIEE).count());
+        kpis.setVisites(actions.stream().filter(a -> a.getEtatAction() == EtatAction.REALISEE).count());
+        kpis.setBacklog(actions.stream().filter(a -> Boolean.TRUE.equals(a.getBacklog())).count());
+        kpis.setUrgenceSilence(actions.stream().filter(a -> Boolean.TRUE.equals(a.getUrgenceSilence())).count());
         return kpis;
     }
 
     // Compte les actions à l'état PLANIFIEE
     public Long countPlanifiees() {
-        return actionRepository.countByEtatAction(EtatAction.PLANIFIEE);
+        return eligibleActions().stream().filter(a -> a.getEtatAction() == EtatAction.PLANIFIEE).count();
     }
 
     // Construit la réponse complète de la page des actions (liste, KPIs, méta, filtres)
@@ -177,10 +188,18 @@ public class ActionService {
             items.forEach(item -> item.setJoursSansActivite(
                 calculateJoursSansActivite(item.getMedecin())
             ));
+            items.forEach(item -> {
+                if (item.getMedecin() != null) {
+                    MoteurCommentaireService.CommentaireMoteurDto synth = moteurCommentaireService.genererCommentaire(item.getMedecin());
+                    item.setCommentaireMoteurResume(moteurCommentaireService.genererResumeCourt(item.getMedecin(), synth));
+                    item.setCommentaireMoteurTitre(synth.titreSynthese());
+                    item.setCommentaireMoteurDetail(moteurCommentaireService.genererCommentaireDetaille(synth));
+                }
+            });
 
         ActionMetaResponse meta = new ActionMetaResponse();
         meta.setAffiches((long) items.size());
-        meta.setCharges(actionRepository.countAllActions());
+        meta.setCharges((long) eligibleActions().size());
 
         ActionPageResponse response = new ActionPageResponse();
         response.setItems(items);
@@ -193,13 +212,65 @@ public class ActionService {
     @Transactional
     public void syncActionsWithMedecins() {
         List<Action> actions = actionRepository.findAll();
+        List<Action> actionsToDelete = new ArrayList<>();
+        Set<Long> medecinsAvecAction = new HashSet<>();
+        Set<String> importedActionKeys = new HashSet<>();
+        Set<String> completedActionKeys = new HashSet<>();
+
+        Set<Long> completedDoctorIds = new HashSet<>();
+
+        for (Action action : actions) {
+            if (action.getMedecin() == null || action.getEtatAction() != EtatAction.REALISEE
+                    || medecinRepository.isPseudoMedecin(action.getMedecin())) {
+                continue;
+            }
+            completedDoctorIds.add(action.getMedecin().getId());
+            String currentStatus = action.getMedecin().getStatut() == null
+                    ? "ACTIF_STABLE" : action.getMedecin().getStatut().toUpperCase();
+            String expectedAction = libelleActionPourStatut(currentStatus);
+            if (expectedAction != null
+                    && canonicalActionLabel(expectedAction).equals(canonicalActionLabel(action.getActionRecommandee()))) {
+                completedActionKeys.add(actionKey(action.getMedecin().getId(), expectedAction));
+            }
+        }
+
         boolean modifie = false;
+        LocalDate baseDate = derniereReferencePourAction();
+
         for (Action a : actions) {
             if (a.getMedecin() != null) {
                 Medecin m = a.getMedecin();
+                if (medecinRepository.isPseudoMedecin(m)) continue;
+
                 String statutMed = m.getStatut() != null ? m.getStatut().toUpperCase() : "ACTIF_STABLE";
-                
-                // Synchroniser systématiquement le statut et le segment
+                if (isUntouchedImportedAction(a)) {
+                    String expectedAction = libelleActionPourStatut(statutMed);
+                    String importedActionKey = actionKey(m.getId(), expectedAction == null
+                            ? canonicalActionLabel(a.getActionRecommandee()) : expectedAction);
+                    if (completedActionKeys.contains(importedActionKey) || completedDoctorIds.contains(m.getId())) {
+                        actionsToDelete.add(a);
+                        continue;
+                    }
+                    if (!importedActionKeys.add(importedActionKey) || !medecinsAvecAction.add(m.getId())) {
+                        actionsToDelete.add(a);
+                        continue;
+                    }
+                }
+
+                // Section 1 : mapping statut -> libelle d'action conforme a la reference R.
+                // INACTIF / ACTIVITE_IRREGULIERE / A_REACTIVER -> pas d'action automatique.
+                // Les actions planifiées pour les inactifs doivent être supprimées (25 médecins - 3 inactifs = 22 actions).
+                String libelleAttendu = libelleActionPourStatut(statutMed);
+                if (libelleAttendu == null || "INACTIF".equals(statutMed) || "EXCLU".equals(statutMed)) {
+                    if (a.getEtatAction() == EtatAction.PLANIFIEE) {
+                        actionsToDelete.add(a);
+                    }
+                    continue;
+                }
+
+                medecinsAvecAction.add(m.getId());
+
+                // Synchroniser systematiquement le statut et le segment
                 if (!statutMed.equalsIgnoreCase(a.getStatut())) {
                     a.setStatut(statutMed);
                     modifie = true;
@@ -209,72 +280,29 @@ public class ActionService {
                     modifie = true;
                 }
 
-                // Ajuster l'action recommandée et l'urgence pour correspondre au statut du médecin
-                int joursSansActivite = calculateJoursSansActivite(m);
-                boolean silenceCritique = joursSansActivite > calculateFrequenceJours(m.getSegment())
-                    || "SILENCE_CRITIQUE".equals(statutMed)
-                    || m.getRisqueUrgence() == RisqueUrgence.URGENT;
-                if (silenceCritique) {
-                    if (!"visite urgence silence".equals(a.getActionRecommandee())
-                            || a.getUrgence() != UrgenceAction.SILENCE_CRITIQUE
-                            || !Boolean.TRUE.equals(a.getUrgenceSilence())) {
-                        a.setActionRecommandee("visite urgence silence");
-                        a.setUrgence(UrgenceAction.SILENCE_CRITIQUE);
-                        a.setUrgenceSilence(true);
-                        a.setCommentaire("Relance prioritaire suite à une baisse d'activité ou à un silence radio prolongé.");
-                        modifie = true;
-                    }
-                } else if (m.getRisqueUrgence() == RisqueUrgence.ELEVE || "RETENTION".equals(statutMed)) {
-                    if (!"visite urgence risque".equals(a.getActionRecommandee())) {
-                        a.setActionRecommandee("visite urgence risque");
-                        a.setUrgence(UrgenceAction.ELEVE);
-                        a.setUrgenceSilence(false);
-                        a.setCommentaire("Visite prioritaire selon le risque commercial calculé.");
-                        modifie = true;
-                    }
-                } else if ("PROGRESSION".equals(statutMed)) {
-                    if (!"visite suivi progression".equals(a.getActionRecommandee())) {
-                        a.setActionRecommandee("visite suivi progression");
-                        a.setUrgence(UrgenceAction.FAIBLE);
-                        a.setUrgenceSilence(false);
-                        a.setCommentaire("Visite de suivi progression effectuée.");
-                        modifie = true;
-                    }
-                } else if ("ONBOARDING".equals(statutMed)) {
-                    if (!"visite onboarding".equals(a.getActionRecommandee())) {
-                        a.setActionRecommandee("visite onboarding");
-                        a.setUrgence(UrgenceAction.ELEVE);
-                        a.setUrgenceSilence(false);
-                        a.setCommentaire("Première visite d'accompagnement.");
-                        modifie = true;
-                    }
-                } else { // ACTIF_STABLE ou autre
-                    if (!"visite suivi régulier".equals(a.getActionRecommandee())) {
-                        a.setActionRecommandee("visite suivi régulier");
-                        a.setUrgence(UrgenceAction.FAIBLE);
-                        a.setUrgenceSilence(false);
-                        a.setCommentaire("Visite de suivi commercial régulier et fidélisation.");
-                        modifie = true;
-                    }
+                if (!libelleAttendu.equals(a.getActionRecommandee())) {
+                    a.setActionRecommandee(libelleAttendu);
+                    modifie = true;
                 }
 
-                // Horizons recommandés (Section 9) : critique stratégique J+3, urgence J+7,
-                // intensité élevée J+15, intensité normale J+30.
-                int horizon;
-                if (Boolean.TRUE.equals(a.getUrgenceSilence()) || a.getUrgence() == UrgenceAction.SILENCE_CRITIQUE) {
-                    horizon = 3;
-                } else if (a.getUrgence() == UrgenceAction.URGENT) {
-                    horizon = 7;
-                } else if (a.getUrgence() == UrgenceAction.ELEVE || "RETENTION".equals(statutMed)) {
-                    horizon = 15;
-                } else if (a.getUrgence() == UrgenceAction.MOYEN || "SURVEILLANCE".equals(statutMed)) {
-                    horizon = 30;
-                } else {
-                    horizon = 30;
+                // Urgence : FAIBLE pour Progression/Actif, ELEVE pour Surveillance/Retention/Onboarding
+                UrgenceAction urgenceAttendue = urgencePourStatut(statutMed);
+                if (urgenceAttendue != null && urgenceAttendue != a.getUrgence()) {
+                    a.setUrgence(urgenceAttendue);
+                    a.setUrgenceSilence(false);
+                    modifie = true;
                 }
+
+                boolean segmentStrategique = List.of("A", "B").contains(
+                        m.getSegment() == null ? "" : m.getSegment().toUpperCase());
+                boolean silenceCritiqueStrategique = segmentStrategique
+                        && Boolean.TRUE.equals(a.getUrgenceSilence());
+                int horizon = ActionHorizonPolicy.recommanderHorizon(
+                    m.getNiveauIntensite(), silenceCritiqueStrategique);
+                boolean horizonModifie = !Objects.equals(a.getHorizonJours(), horizon);
                 a.setHorizonJours(horizon);
 
-                // Initialisation du plan de rétention séquentiel (Section 3)
+                // Initialisation du plan de retention sequentiel (Section 3)
                 if ("RETENTION".equals(statutMed)) {
                     if (a.getTypeEtapeRetention() == null || a.getTypeEtapeRetention() == TypeEtapeRetention.AUCUNE) {
                         a.setTypeEtapeRetention(TypeEtapeRetention.ACTION_1);
@@ -283,13 +311,14 @@ public class ActionService {
                     }
                 }
 
-                // Ajuster la date de visite et date d'échéance si nécessaire
+                // Date de visite et echeance calculees a partir de la fin du dernier mois avec donnees
+                // (et non depuis LocalDate.now()) pour rester coherent avec la dateReference du cycle.
                 if (a.getEtatAction() == EtatAction.PLANIFIEE) {
-                    if (a.getDateVisite() == null || a.getDateVisite().isBefore(LocalDate.now())) {
-                        a.setDateVisite(LocalDate.now().plusDays(horizon));
+                    if (horizonModifie || a.getDateVisite() == null || a.getDateVisite().isBefore(baseDate)) {
+                        a.setDateVisite(baseDate.plusDays(horizon));
                         modifie = true;
                     }
-                    LocalDate echeance = a.getDateVisite() != null ? a.getDateVisite() : LocalDate.now().plusDays(horizon);
+                    LocalDate echeance = a.getDateVisite() != null ? a.getDateVisite() : baseDate.plusDays(horizon);
                     a.setDateEcheance(echeance);
                     boolean enRetard = echeance.isBefore(LocalDate.now());
                     if (!Boolean.valueOf(enRetard).equals(a.getEstEnRetard())) {
@@ -301,10 +330,100 @@ public class ActionService {
                 }
             }
         }
+
+        if (!actionsToDelete.isEmpty()) {
+            actionRepository.deleteAll(actionsToDelete);
+            actions.removeAll(actionsToDelete);
+        }
+
+        // Créer les actions manquantes pour les médecins éligibles sans action
+        String[] commerciaux = new String[]{"Karim Bennani", "Salma Idrissi"};
+        int idx = actions.size();
+        String cycleCourant = YearMonth.from(baseDate).toString();
+        List<Action> nouvellesActions = new ArrayList<>();
+
+        List<Medecin> medecinsEligibles = medecinRepository.findAllWithImportedDossiers().stream()
+                .filter(m -> !medecinRepository.isPseudoMedecin(m))
+                .toList();
+
+        for (Medecin m : medecinsEligibles) {
+            String statutMed = m.getStatut() != null ? m.getStatut().toUpperCase() : "ACTIF_STABLE";
+            String libelle = libelleActionPourStatut(statutMed);
+            if (libelle != null && !"INACTIF".equals(statutMed) && !"EXCLU".equals(statutMed)) {
+                if (!medecinsAvecAction.contains(m.getId())) {
+                    Action na = new Action();
+                    na.setMedecin(m);
+                    na.setStatut(statutMed);
+                    na.setSegment(m.getSegment() != null ? m.getSegment().toUpperCase() : "C");
+                    na.setActionRecommandee(libelle);
+                    na.setUrgence(urgencePourStatut(statutMed));
+                    na.setEtatAction(EtatAction.PLANIFIEE);
+                    na.setCommercial(commerciaux[idx++ % commerciaux.length]);
+                    na.setLieuOrganisme(m.getOrganisme() != null ? m.getOrganisme() : (m.getVille() != null ? m.getVille() : "Cabinet"));
+                    na.setCycleMensuel(cycleCourant);
+                    int horizon = ActionHorizonPolicy.recommanderHorizon(
+                            m.getNiveauIntensite(), false);
+                    na.setHorizonJours(horizon);
+                    na.setDateVisite(baseDate.plusDays(horizon));
+                    na.setDateEcheance(na.getDateVisite());
+                    if ("RETENTION".equals(statutMed)) {
+                        na.setTypeEtapeRetention(TypeEtapeRetention.ACTION_1);
+                        na.setStatutPlanRetention(StatutPlanRetention.EN_COURS);
+                    }
+                    nouvellesActions.add(na);
+                    actions.add(na);
+                }
+            }
+        }
+        if (!nouvellesActions.isEmpty()) {
+            actionRepository.saveAll(nouvellesActions);
+        }
+
         if (modifie) {
             actionRepository.saveAll(actions);
         }
     }
+
+    /** Date de base pour le calcul des echeances d'actions : fin du dernier mois avec donnees,
+     *  ou LocalDate.now() si la base est vide. Coherent avec SegmentationService.derniereReferenceData(). */
+    private LocalDate derniereReferencePourAction() {
+        List<LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
+        return dates.isEmpty()
+                ? LocalDate.now()
+                : YearMonth.from(dates.get(0)).atEndOfMonth();
+    }
+
+    /**
+     * Section 1 : libelle d'action conforme au document de regles (D) pour chaque statut.
+     * Retourne null pour les statuts sans action automatique (INACTIF, ACTIVITE_IRREGULIERE, A_REACTIVER).
+     *
+     * Correspondance statut -> libelle D :
+     *   PROGRESSION           -> visite suivi progression
+     *   ACTIF_STABLE / ACTIF  -> visite suivi régulier
+     *   SURVEILLANCE          -> visite diagnostic surveillance
+     *   RETENTION             -> visite diagnostic
+     *   ONBOARDING            -> visite onboarding
+     */
+    private static String libelleActionPourStatut(String statutMed) {
+        return switch (statutMed) {
+            case "PROGRESSION"                    -> "visite_reconnaissance";
+            case "ACTIF_STABLE", "ACTIF"         -> "fidelisation";
+            case "SURVEILLANCE"                   -> "visite_diagnostic_surveillance";
+            case "RETENTION", "SILENCE_CRITIQUE" -> "visite_diagnostic";
+            case "ONBOARDING"                     -> "visite_qualification";
+            case "A_REACTIVER"                   -> "visite_prospection";
+            default                               -> null;
+        };
+    }
+
+    private static UrgenceAction urgencePourStatut(String statutMed) {
+        return switch (statutMed) {
+            case "PROGRESSION", "ACTIF_STABLE", "ACTIF" -> UrgenceAction.FAIBLE;
+            case "SURVEILLANCE", "RETENTION", "SILENCE_CRITIQUE", "ONBOARDING" -> UrgenceAction.ELEVE;
+            default -> null;
+        };
+    }
+
 
     // Permet à un commercial de se positionner et de réserver une action VACTIS
     @Transactional
@@ -331,7 +450,7 @@ public class ActionService {
         Action action = actionRepository.findById(idAction)
                 .orElseThrow(() -> new IllegalArgumentException("Action introuvable (ID: " + idAction + ")"));
 
-        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), request.getObstaclePrincipal(), request.getDateDepart(), request.getDateRetourPrevue());
+        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), request.getObstaclePrincipal(), request.getDateDepart(), request.getDateRetourPrevue(), request.getDateRevue());
         boolean realisee = Boolean.TRUE.equals(request.getActionRealisee());
         if (!realisee && (request.getMotifNonRealisation() == null || request.getMotifNonRealisation().isBlank())) {
             throw new IllegalArgumentException("Le motif de non-réalisation est obligatoire si l'action n'est pas réalisée.");
@@ -344,6 +463,9 @@ public class ActionService {
         action.setMotifNonRealisation(request.getMotifNonRealisation());
         action.setQualification(request.getQualification());
         action.setObstaclePrincipal(parseObstacle(request.getObstaclePrincipal()));
+        action.setDateDepart(request.getDateDepart());
+        action.setDateRetourPrevue(request.getDateRetourPrevue());
+        action.setDateRevue(request.getDateRevue());
         action.setCommentaire(request.getCommentaire());
         action.setProchaineAction(request.getProchaineAction());
         action.setDateProchaineAction(request.getDateProchaineAction());
@@ -367,6 +489,7 @@ public class ActionService {
             rt.setQualification(parseQualification(request.getQualification()));
             rt.setDateDepart(request.getDateDepart());
             rt.setDateRetourPrevue(request.getDateRetourPrevue());
+            rt.setDateRevue(request.getDateRevue());
             rt.setObstaclePrincipal(parseObstacle(request.getObstaclePrincipal()));
             if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
                 rt.setReclamation(true);
@@ -374,7 +497,10 @@ public class ActionService {
             rt = retourTerrainRepository.save(rt);
 
             if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
-                creerTicketReclamationAutomatique(m, request.getCommentaire(), rt.getObstaclePrincipal(), rt.getId(), username != null ? username : action.getCommercial());
+                Reclamation reclamation = creerTicketReclamationAutomatique(m, request.getCommentaire(),
+                        rt.getObstaclePrincipal(), rt.getId(), rt.getDateVisite(),
+                        username != null ? username : action.getCommercial());
+                if (reclamation != null) action.setReclamationId(reclamation.getId());
             }
         }
 
@@ -384,7 +510,7 @@ public class ActionService {
     // Enregistre une visite commerciale libre (hors VACTIS)
     @Transactional
     public RetourTerrain creerVisiteLibre(SaisieVisiteLibreRequest request, String username) {
-        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), null, request.getDateDepart(), request.getDateRetourPrevue());
+        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), null, request.getDateDepart(), request.getDateRetourPrevue(), request.getDateRevue());
         Medecin medecin = null;
         if (request.getMedecinId() != null) {
             medecin = medecinRepository.findById(request.getMedecinId())
@@ -418,6 +544,7 @@ public class ActionService {
         rt.setQualification(parseQualification(request.getQualification()));
             rt.setDateDepart(request.getDateDepart());
             rt.setDateRetourPrevue(request.getDateRetourPrevue());
+            rt.setDateRevue(request.getDateRevue());
         if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
             rt.setReclamation(true);
         }
@@ -425,58 +552,70 @@ public class ActionService {
         rt = retourTerrainRepository.save(rt);
 
         if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
-            creerTicketReclamationAutomatique(medecin, request.getCommentaire(), null, rt.getId(), username != null ? username : "Commercial");
+                creerTicketReclamationAutomatique(medecin, request.getCommentaire(), null, rt.getId(),
+                    rt.getDateVisite(), username != null ? username : "Commercial");
         }
 
         return rt;
     }
 
-    private void creerTicketReclamationAutomatique(Medecin m, String description, ObstaclePrincipal obstacle, Long retourTerrainId, String declarant) {
-        try {
-            ReclamationRequest recReq = new ReclamationRequest();
-            recReq.setMedecinId(m.getId());
-            recReq.setDescription(description != null && !description.isBlank() ? description : "Réclamation signalée sur le terrain");
-            recReq.setPriorite(PrioriteReclamation.HAUTE);
-            recReq.setRetourTerrainId(retourTerrainId);
-            if (obstacle != null) {
-                switch (obstacle) {
-                    case QUALITE_DELAI -> recReq.setCategorie(CategorieReclamation.DELAIS_RESULTATS);
-                    case PRIX_TARIF -> recReq.setCategorie(CategorieReclamation.FACTURATION_TARIFS);
-                    case RELATIONNEL_ACCUEIL -> recReq.setCategorie(CategorieReclamation.RELATIONNEL_ACCUEIL);
-                    default -> recReq.setCategorie(CategorieReclamation.AUTRE);
-                }
-            } else {
-                recReq.setCategorie(CategorieReclamation.AUTRE);
+    private Reclamation creerTicketReclamationAutomatique(Medecin m, String description, ObstaclePrincipal obstacle,
+                                                          Long retourTerrainId, LocalDate dateVisite, String declarant) {
+        ReclamationRequest recReq = new ReclamationRequest();
+        recReq.setMedecinId(m.getId());
+        recReq.setDescription(description != null && !description.isBlank() ? description : "Réclamation signalée sur le terrain");
+        recReq.setPriorite(PrioriteReclamation.HAUTE);
+        recReq.setRetourTerrainId(retourTerrainId);
+        recReq.setDateVisite(dateVisite);
+        if (obstacle != null) {
+            switch (obstacle) {
+                case QUALITE, DELAI, QUALITE_DELAI -> recReq.setCategorie(CategorieReclamation.DELAIS_RESULTATS);
+                case PRIX_TARIF -> recReq.setCategorie(CategorieReclamation.FACTURATION_TARIFS);
+                case RELATION, RELATIONNEL_ACCUEIL -> recReq.setCategorie(CategorieReclamation.RELATIONNEL_ACCUEIL);
+                default -> recReq.setCategorie(CategorieReclamation.AUTRE);
             }
-            reclamationService.creerReclamation(recReq, declarant);
-        } catch (Exception e) {
-            // Log but do not block the return submission if ticket fails
-            org.slf4j.LoggerFactory.getLogger(ActionService.class).error("Erreur lors de la création auto du ticket réclamation", e);
+        } else {
+            recReq.setCategorie(CategorieReclamation.AUTRE);
         }
+        return reclamationService.creerReclamation(recReq, declarant);
     }
 
-    private void validateVisitRequest(Boolean actionRealisee, LocalDate dateVisite, String motif,
+    void validateVisitRequest(Boolean actionRealisee, LocalDate dateVisite, String motif,
                                       String qualification, String commentaire, Double noteTerrain,
                                       LocalDate dateProchaineAction, String obstaclePrincipal,
-                                      LocalDate dateDepart, LocalDate dateRetourPrevue) {
+                                      LocalDate dateDepart, LocalDate dateRetourPrevue, LocalDate dateRevue) {
         if (dateVisite == null || dateVisite.isAfter(LocalDate.now())) {
             throw new IllegalArgumentException("La date réelle de visite est obligatoire et ne peut pas être future.");
         }
         if (Boolean.FALSE.equals(actionRealisee) && (motif == null || motif.isBlank())) {
             throw new IllegalArgumentException("Le motif de non-réalisation est obligatoire.");
         }
+        if (Boolean.FALSE.equals(actionRealisee) && !List.of(
+                "MEDECIN_ABSENT", "MANQUE_DE_TEMPS", "VISITE_REPORTEE", "PRIORITE_MODIFIEE",
+                "ADRESSE_INCORRECTE_INDISPONIBLE", "AUTRE").contains(motif.trim().toUpperCase())) {
+            throw new IllegalArgumentException("Motif de non-réalisation invalide.");
+        }
         if (Boolean.TRUE.equals(actionRealisee) && (qualification == null || qualification.isBlank())) {
             throw new IllegalArgumentException("La qualification est obligatoire après une action réalisée.");
         }
         if ("CONGE_ABSENCE".equalsIgnoreCase(qualification)
-                && (dateDepart == null || (dateRetourPrevue != null && dateRetourPrevue.isBefore(dateDepart)))) {
-            throw new IllegalArgumentException("Les dates de départ et de retour prévue sont obligatoires et cohérentes pour un congé ou une absence.");
+                && (dateDepart == null
+                || (dateRetourPrevue == null && dateRevue == null)
+                || (dateRetourPrevue != null && dateRetourPrevue.isBefore(dateDepart))
+                || (dateRevue != null && dateRevue.isBefore(dateDepart)))) {
+            throw new IllegalArgumentException("Saisissez la date de départ et une date de retour prévue ou une date de revue cohérente.");
         }
         if ("RECLAMATION".equalsIgnoreCase(qualification) && (commentaire == null || commentaire.isBlank())) {
             throw new IllegalArgumentException("Le commentaire est obligatoire en cas de réclamation.");
         }
-        if ("DEFAVORABLE".equalsIgnoreCase(qualification) && (obstaclePrincipal == null || obstaclePrincipal.isBlank())) {
-            throw new IllegalArgumentException("L'obstacle principal est obligatoire en cas de qualification défavorable.");
+        if ("DEFAVORABLE".equalsIgnoreCase(qualification)) {
+            if (commentaire == null || commentaire.isBlank()) {
+                throw new IllegalArgumentException("Le commentaire est obligatoire en cas de qualification défavorable.");
+            }
+            if (obstaclePrincipal == null || !List.of("PRIX_TARIF", "QUALITE", "DELAI", "RELATION", "CONCURRENCE",
+                    "ORGANISATION_LOGISTIQUE", "REFUS_EXPLICITE", "AUTRE").contains(obstaclePrincipal.trim().toUpperCase())) {
+                throw new IllegalArgumentException("L'obstacle principal est obligatoire et doit être une valeur reconnue.");
+            }
         }
         if (noteTerrain != null && (noteTerrain < 1.0 || noteTerrain > 5.0)) {
             throw new IllegalArgumentException("La note potentielle doit être comprise entre 1 et 5.");
@@ -508,23 +647,31 @@ public class ActionService {
     // Génère les données de la fiche contextuelle du médecin
     @Transactional
     public FicheContextuelleResponse getFicheContextuelle(Long medecinId) {
+        return getFicheContextuelle(medecinId, true);
+    }
+
+    @Transactional
+    public FicheContextuelleResponse getFicheContextuelle(Long medecinId, boolean isPilotage) {
         Medecin m = medecinRepository.findById(medecinId)
                 .orElseThrow(() -> new IllegalArgumentException("Médecin introuvable"));
 
         List<RetourTerrain> historique = retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(m);
 
         // Recherche de la date d'envoi du dernier dossier médical (patient au labo)
-        int joursSansActivite = calculateJoursSansActivite(m);
+        Integer joursSansActivite = calculateJoursSansActivite(m);
 
         // Fréquence attendue basée sur le segment du médecin
         int frequenceJours = calculateFrequenceJours(m.getSegment());
 
         // Détermination du statut de silence radio
         String silenceRadioStatus;
-        if (joursSansActivite > frequenceJours || (m.getStatut() != null && m.getStatut().toUpperCase().contains("SILENCE"))) {
+        if ((joursSansActivite != null && joursSansActivite > frequenceJours)
+                || (m.getStatut() != null && m.getStatut().toUpperCase().contains("SILENCE"))) {
             silenceRadioStatus = "SILENCE CRITIQUE";
-        } else if (joursSansActivite > Math.round(frequenceJours * 0.7)) {
+        } else if (joursSansActivite != null && joursSansActivite > Math.round(frequenceJours * 0.7)) {
             silenceRadioStatus = "ALERTE SILENCE";
+        } else if (joursSansActivite == null) {
+            silenceRadioStatus = "DONNÉES INDISPONIBLES";
         } else {
             silenceRadioStatus = "SUIVI REGULIER";
         }
@@ -538,13 +685,19 @@ public class ActionService {
         resp.setStatutExplanation(synth.explicationDetaillee());
         resp.setCommentaireMoteurTitre(synth.titreSynthese());
         resp.setCommentaireMoteurAction(synth.actionConseillee());
+        resp.setCommentaireMoteurResume(moteurCommentaireService.genererResumeCourt(m, synth));
+        resp.setCommentaireMoteurDetail(moteurCommentaireService.genererCommentaireDetaille(synth));
+        resp.setCommentaireMoteurDirection(isPilotage ? moteurCommentaireService.genererMessageDirection(m, synth) : null);
         resp.setSilenceRadioStatus(silenceRadioStatus);
         resp.setJoursSansActivite(joursSansActivite);
         resp.setFrequenceJours(frequenceJours);
         return resp;
     }
 
-    private int calculateJoursSansActivite(Medecin medecin) {
+    private Integer calculateJoursSansActivite(Medecin medecin) {
+        if (medecin.getJoursSansActivite() != null) {
+            return medecin.getJoursSansActivite();
+        }
         LocalDate lastDossierDate = extractionDonneesRepository.findMaxDateReceptionByMedecinId(medecin.getId());
         if (lastDossierDate == null) {
             lastDossierDate = medecin.getDateDerniereActivite();
@@ -554,10 +707,11 @@ public class ActionService {
             lastDossierDate = medecin.getDatePremiereCollaboration();
         }
         if (lastDossierDate == null) {
-            return 0;
+            return null;
         }
 
-        long diff = java.time.temporal.ChronoUnit.DAYS.between(lastDossierDate, LocalDate.now());
+        LocalDate ref = derniereReferencePourAction();
+        long diff = java.time.temporal.ChronoUnit.DAYS.between(lastDossierDate, ref);
         return diff > 0 ? (int) diff : 0;
     }
 
@@ -607,5 +761,39 @@ public class ActionService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<Action> eligibleActions() {
+        return actionRepository.findAllForImportedDoctors().stream()
+                .filter(a -> a.getMedecin() != null && !medecinRepository.isPseudoMedecin(a.getMedecin()))
+                .toList();
+    }
+
+    private boolean isUntouchedImportedAction(Action action) {
+        boolean importGenerated = "IMPORT_AUTO".equals(action.getSourceRecommandation());
+        boolean legacyGenerated = action.getSourceRecommandation() == null
+            && List.of("visite_reconnaissance", "fidelisation", "visite_diagnostic_surveillance",
+                "visite_diagnostic", "visite_qualification", "visite_prospection",
+                "visite suivi progression", "visite suivi régulier", "visite diagnostic surveillance",
+                "visite diagnostic", "visite onboarding")
+                .contains(action.getActionRecommandee());
+        boolean isObsoleteRetentionAction2 = action.getTypeEtapeRetention() == TypeEtapeRetention.ACTION_2
+            && action.getMedecin() != null
+            && !"RETENTION".equalsIgnoreCase(action.getMedecin().getStatut());
+        return (importGenerated || legacyGenerated || isObsoleteRetentionAction2)
+                && action.getEtatAction() == EtatAction.PLANIFIEE
+                && action.getDecisionRecommandation() == null
+                && (action.getActionParenteId() == null || isObsoleteRetentionAction2)
+                && (action.getTypeEtapeRetention() != TypeEtapeRetention.ACTION_2 || isObsoleteRetentionAction2)
+                && !Boolean.TRUE.equals(action.getIsReserved())
+                && action.getReclamationId() == null;
+    }
+
+    private static String canonicalActionLabel(String label) {
+        return label == null ? "" : label.trim().toLowerCase().replace('_', ' ').replaceAll("\\s+", " ");
+    }
+
+    private static String actionKey(Long medecinId, String action) {
+        return medecinId + "|" + canonicalActionLabel(action);
     }
 }

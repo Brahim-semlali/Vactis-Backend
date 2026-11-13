@@ -62,6 +62,7 @@ public class CompteRenduTerrainResponse {
         private String commentaire;
         private String statutVisite;
         private String qualification;
+        private String typeVisite;
         private Boolean reclamation;
     }
 }

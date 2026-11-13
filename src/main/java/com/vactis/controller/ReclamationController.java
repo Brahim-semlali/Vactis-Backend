@@ -4,6 +4,7 @@ import com.vactis.dto.reclamation.ReclamationRequest;
 import com.vactis.model.reclamation.CategorieReclamation;
 import com.vactis.model.reclamation.PrioriteReclamation;
 import com.vactis.model.reclamation.Reclamation;
+import com.vactis.model.reclamation.ReclamationHistorique;
 import com.vactis.model.reclamation.StatutReclamation;
 import com.vactis.service.ReclamationService;
 import jakarta.validation.Valid;
@@ -33,12 +34,17 @@ public class ReclamationController {
             @RequestParam(required = false) CategorieReclamation categorie,
             @RequestParam(required = false) PrioriteReclamation priorite
     ) {
-        return ResponseEntity.ok(reclamationService.searchReclamations(search, statut, categorie, priorite));
+            return ResponseEntity.ok(reclamationService.searchReclamations(search, statut, categorie, priorite));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Reclamation> getById(@PathVariable Long id) {
         return ResponseEntity.ok(reclamationService.getById(id));
+    }
+
+    @GetMapping("/{id}/historique")
+    public ResponseEntity<List<ReclamationHistorique>> getHistorique(@PathVariable Long id) {
+        return ResponseEntity.ok(reclamationService.getHistorique(id));
     }
 
     @GetMapping("/medecin/{medecinId}")
@@ -59,8 +65,13 @@ public class ReclamationController {
     @PatchMapping("/{id}/statut")
     public ResponseEntity<Reclamation> updateStatut(
             @PathVariable Long id,
-            @RequestBody Map<String, String> body
+            @RequestBody Map<String, String> body,
+            Authentication authentication
     ) {
+        if (!isDirectionOuAdmin(authentication)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Accès réservé à la direction / administration.");
+        }
         String statutValue = body.get("statut");
         if (statutValue == null || statutValue.isBlank()) {
             throw new IllegalArgumentException("Le statut de réclamation est obligatoire.");
@@ -68,7 +79,20 @@ public class ReclamationController {
         StatutReclamation statut = StatutReclamation.valueOf(statutValue.trim().toUpperCase());
         String solution = body.get("solution");
         String responsable = body.get("responsable");
-        return ResponseEntity.ok(reclamationService.mettreAJourStatut(id, statut, solution, responsable));
+        String prochaineInstruction = body.get("prochaineInstruction");
+        String dateStr = body.get("dateTraitement") != null ? body.get("dateTraitement") : body.get("dateResolution");
+        java.time.LocalDate dateTraitement = (dateStr != null && !dateStr.isBlank()) ? java.time.LocalDate.parse(dateStr.trim()) : null;
+        String auteur = authentication == null ? "Direction" : authentication.getName();
+        return ResponseEntity.ok(reclamationService.mettreAJourStatut(
+            id, statut, solution, responsable, prochaineInstruction, dateTraitement, auteur));
+    }
+
+    private boolean isDirectionOuAdmin(Authentication authentication) {
+        if (authentication == null) return false;
+        return authentication.getAuthorities().stream().anyMatch(a -> {
+            String auth = a.getAuthority().toUpperCase();
+            return auth.contains("ADMIN") || auth.contains("DIRECTION") || auth.contains("PILOTAGE");
+        });
     }
 
     @GetMapping("/kpi/ouvertes")

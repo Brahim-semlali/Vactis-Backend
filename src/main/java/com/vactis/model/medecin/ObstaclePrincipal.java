@@ -6,8 +6,15 @@ package com.vactis.model.medecin;
  */
 public enum ObstaclePrincipal {
     PRIX_TARIF,
-    QUALITE_DELAI,
-    RELATIONNEL_ACCUEIL,
+    QUALITE,
+    DELAI,
+    RELATION,
     CONCURRENCE,
-    AUTRE
+    ORGANISATION_LOGISTIQUE,
+    REFUS_EXPLICITE,
+    AUTRE,
+    @Deprecated
+    QUALITE_DELAI,
+    @Deprecated
+    RELATIONNEL_ACCUEIL,
 }

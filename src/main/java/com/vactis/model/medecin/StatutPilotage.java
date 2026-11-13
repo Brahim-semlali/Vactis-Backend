@@ -7,6 +7,7 @@ public enum StatutPilotage {
     SURVEILLANCE,
     RETENTION,
     ONBOARDING,
+    ACTIVITE_IRREGULIERE,
     A_REACTIVER,
     INACTIF,
     ACTIF,

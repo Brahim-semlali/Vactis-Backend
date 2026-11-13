@@ -10,19 +10,57 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.text.Normalizer;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 // Repository JPA pour l'accès aux données du portefeuille des médecins
 @Repository
 public interface MedecinRepository extends JpaRepository<Medecin, Long> {
 
+    default boolean isPseudoMedecin(Medecin medecin) {
+        if (medecin == null) return true;
+        String normalizedName = normalizeDoctorName(
+                (medecin.getPrenom() == null ? "" : medecin.getPrenom()) + " "
+                        + (medecin.getNom() == null ? "" : medecin.getNom()));
+        if (normalizedName.isBlank()) return true;
+
+        String sortedName = java.util.Arrays.stream(normalizedName.split(" "))
+                .filter(token -> !token.equals("dr"))
+                .sorted()
+                .collect(java.util.stream.Collectors.joining(" "));
+        return List.of("inconnu", "inconnu medecin", "non precise", "medecin non precise", "nr", "n r")
+                .contains(sortedName);
+    }
+
+    private static String normalizeDoctorName(String value) {
+        return Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
     // Recherche un médecin par son code unique (sensible à la casse)
     Optional<Medecin> findByCodeMedecin(String codeMedecin);
 
     // Recherche un médecin par son code unique (insensible à la casse)
     Optional<Medecin> findByCodeMedecinIgnoreCase(String codeMedecin);
+
+    @Query("""
+        select distinct m
+        from Medecin m
+        where exists (
+            select e.id
+            from ExtractionDonnees e
+            where e.medecin = m
+        )
+        order by m.nom, m.prenom
+    """)
+    List<Medecin> findAllWithImportedDossiers();
 
     // Retourne les médecins par statut de performance
     List<Medecin> findByStatut(StatutMedecin statut);
@@ -64,7 +102,12 @@ public interface MedecinRepository extends JpaRepository<Medecin, Long> {
     @Query("""
         select m
         from Medecin m
-        where (:search is null or :search = '' or
+                where (
+                    lower(coalesce(:statut, '')) = 'onboarding'
+                    or exists (
+                             select e.id from ExtractionDonnees e where e.medecin = m
+                    ))
+                    and (:search is null or :search = '' or
                lower(concat(m.nom, ' ', m.prenom)) like lower(concat('%', :search, '%')) or
                lower(m.codeMedecin) like lower(concat('%', :search, '%')) or
                lower(m.specialite) like lower(concat('%', :search, '%')) or

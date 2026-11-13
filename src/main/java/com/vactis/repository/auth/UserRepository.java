@@ -32,4 +32,8 @@ public interface UserRepository extends JpaRepository<Users, Long> {
     boolean existsByEmail(String email);
 
     java.util.List<Users> findByEnabledTrueAndAccountLockedFalse();
+
+    @Query("SELECT DISTINCT u FROM Users u JOIN u.roles r JOIN r.menuItems menu " +
+            "WHERE menu.route = :route AND u.enabled = true")
+    java.util.List<Users> findActiveWithMenuRoute(@Param("route") String route);
 }

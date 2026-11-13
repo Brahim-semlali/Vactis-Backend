@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS retours_terrain (
     obstacle_principal VARCHAR(30)
 );
 
+ALTER TABLE retours_terrain ALTER COLUMN note DROP NOT NULL;
+
 -- 7. Table reclamations (Section 7)
 CREATE TABLE IF NOT EXISTS reclamations (
     id BIGSERIAL PRIMARY KEY,

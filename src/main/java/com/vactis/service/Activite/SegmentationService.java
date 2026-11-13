@@ -10,6 +10,7 @@ import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.RetourTerrainRepository;
 import com.vactis.service.ControleService;
 import com.vactis.service.RetourTerrainService;
+import com.vactis.service.ActionHorizonPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,13 +34,36 @@ public class SegmentationService {
 
     @Transactional
     public void recalculerSegmentationPortefeuille() {
-        List<Medecin> medecins = medecinRepository.findAll();
+        // Utilise la fin du dernier mois avec des données en base,
+        // et non la date du jour, pour ne pas créer un mois courant à zéro
+        // quand les données de ce mois sont absentes (règle R : la grille
+        // s'arrête au dernier mois qui contient des données).
+        recalculerSegmentationPortefeuille(derniereReferenceData());
+    }
+
+    /** Retourne le dernier jour du mois le plus récent qui contient des données
+     *  d'extraction. Repli sur LocalDate.now() si la base est vide. */
+    private LocalDate derniereReferenceData() {
+        List<LocalDate> dates = extractionDonneesRepository.findAllDatesDescending();
+        if (dates.isEmpty()) {
+            log.warn("Aucune donnée d'extraction en base — dateReference = LocalDate.now().");
+            return LocalDate.now();
+        }
+        return YearMonth.from(dates.get(0)).atEndOfMonth();
+    }
+
+    @Transactional
+    public void recalculerSegmentationPortefeuille(LocalDate dateReference) {
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
         if (medecins.isEmpty()) return;
 
         int totalMedecins = medecins.size();
 
-        List<LocalDate> datesReception = extractionDonneesRepository.findAllDatesDescending();
-        YearMonth moisCourant = datesReception.isEmpty() ? YearMonth.now() : YearMonth.from(datesReception.get(0));
+        YearMonth moisCourant = YearMonth.from(dateReference);
+        List<LocalDate> allDatesDescending = extractionDonneesRepository.findAllDatesDescending();
+        YearMonth premierMoisGrille = allDatesDescending.isEmpty()
+            ? moisCourant : YearMonth.from(allDatesDescending.get(allDatesDescending.size() - 1));
         Map<YearMonth, Map<Long, Double>> caParMois = new HashMap<>();
         Map<YearMonth, Map<Long, Double>> volumeParMois = new HashMap<>();
         for (int offset = 0; offset <= 3; offset++) {
@@ -51,39 +75,52 @@ public class SegmentationService {
         }
 
         Map<Long, Double> caMoyenParMedecin = new HashMap<>();
-        for (Medecin medecin : medecins) {
-            double caMoyen = 0.0;
-            for (int offset = 0; offset < 3; offset++) {
-                caMoyen += valueFor(caParMois, moisCourant.minusMonths(offset), medecin.getId());
-            }
-            caMoyenParMedecin.put(medecin.getId(), caMoyen / 3.0);
+        // CA total et cas totaux sur tout l'historique (pour le poids économique et le CA moyen R12)
+        Map<Long, Double> caTotalParMedecin = aggregateByMedecin(
+            extractionDonneesRepository.sumCaGroupedByMedecin());
+        Map<Long, Double> casTotauxParMedecin = new HashMap<>();
+        for (Object[] row : extractionDonneesRepository.countCasGroupedByMedecin()) {
+            casTotauxParMedecin.put(((Number) row[0]).longValue(), ((Number) row[1]).doubleValue());
         }
 
-        // 1. Récupérer le nombre de cas par médecin
+        // R12 : Nombre de mois de la grille commune (janvier 2025 à moisCourant = 21 mois)
+        LocalDate dateDebutGrille = allDatesDescending.isEmpty() ? dateReference : allDatesDescending.get(allDatesDescending.size() - 1);
+        long nbMoisGrille = Math.max(1, ChronoUnit.MONTHS.between(YearMonth.from(dateDebutGrille), moisCourant) + 1);
+
+        // CA mensuel moyen selon R12 : CA historique total / nombre de mois de la grille (21)
+        for (Medecin medecin : medecins) {
+            double caTotal = caTotalParMedecin.getOrDefault(medecin.getId(), 0.0);
+            double caMoyen = caTotal / (double) nbMoisGrille;
+            caMoyenParMedecin.put(medecin.getId(), caMoyen);
+        }
+
+        // 1. Nombre de cas par médecin (mois courant) — pour le volume
         Map<Long, Double> volumeCourantParMedecin = volumeParMois.get(moisCourant);
         Map<Long, Long> casMap = new HashMap<>();
         for (Map.Entry<Long, Double> entry : volumeCourantParMedecin.entrySet()) {
             casMap.put(entry.getKey(), entry.getValue().longValue());
         }
 
-        // 2. Calculer le CA max et le Nombre de cas max dans le portefeuille pour la normalisation
+        // Maxima pour la normalisation du poids économique (tout l'historique)
         double maxCa = medecins.stream()
-            .mapToDouble(m -> valueFor(caParMois, moisCourant, m.getId()))
-                .max()
-                .orElse(0.0);
+            .mapToDouble(m -> caTotalParMedecin.getOrDefault(m.getId(), 0.0))
+            .max()
+            .orElse(0.0);
         if (maxCa <= 0) maxCa = 1.0;
 
         double maxCas = medecins.stream()
-                .mapToDouble(m -> casMap.getOrDefault(m.getId(), 0L).doubleValue())
+            .mapToDouble(m -> casTotauxParMedecin.getOrDefault(m.getId(), 0.0))
                 .max()
                 .orElse(0.0);
         if (maxCas <= 0) maxCas = 1.0;
 
-        // 3. Trier par CA mensuel moyen croissant pour déterminer le rang percentile (Performance)
+        // 4. Trier par CA total historique croissant pour déterminer le rang (aligné sur l'encadrant)
         List<Medecin> medecinsTriesParCa = new ArrayList<>(medecins);
-        medecinsTriesParCa.sort(Comparator.comparingDouble(m -> caMoyenParMedecin.getOrDefault(m.getId(), 0.0)));
+        medecinsTriesParCa.sort(ordrePerformanceParCa(caTotalParMedecin));
 
         Map<Long, Double> performanceMap = new HashMap<>();
+        List<Double> intensitesCalculees = new ArrayList<>();
+        Map<Long, Long> moisActifsParMedecin = new HashMap<>();
         for (int i = 0; i < totalMedecins; i++) {
             Medecin m = medecinsTriesParCa.get(i);
             double performance = (totalMedecins == 1) ? 100.0 : ((double) i / (totalMedecins - 1)) * 100.0;
@@ -107,21 +144,27 @@ public class SegmentationService {
             } else {
                 m.setSourcePotentiel("DEFAUT");
             }
-            double potentielSur100 = Math.min(100.0, Math.max(0.0, (noteSur5 / 5.0) * 100.0));
+            double potentielSur100 = ScoreMetierPolicy.potentiel(noteSur5);
             m.setPotentielSur100(potentielSur100);
 
             double caCourant = valueFor(caParMois, moisCourant, m.getId());
             double volumeCourant = valueFor(volumeParMois, moisCourant, m.getId());
-            double caReference = averageForPreviousMonths(caParMois, m, moisCourant);
-            double volumeReference = averageForPreviousMonths(volumeParMois, m, moisCourant);
-            double variationCa = percentageDifference(caCourant, caReference, 300.0);
-            double variationVolume = percentageDifference(volumeCourant, volumeReference, 1.0);
-            double variationMixte = (0.60 * variationCa) + (0.40 * variationVolume);
-            m.setReferenceCa(round(caReference));
-            m.setReferenceVolume(round(volumeReference));
-            m.setVariationCa(round(variationCa));
-            m.setVariationVolume(round(variationVolume));
-            m.setVariationMixteSur100(round(variationMixte));
+            double caReference = averageForPreviousMonths(caParMois, m, moisCourant, premierMoisGrille);
+            double volumeReference = averageForPreviousMonths(volumeParMois, m, moisCourant, premierMoisGrille);
+                int nombreMoisReference = (int) Math.min(3L,
+                    Math.max(0L, ChronoUnit.MONTHS.between(premierMoisGrille, moisCourant)));
+            double variationCa = IndicateursMensuelsPolicy.variation(caCourant, caReference, 300.0);
+            double variationVolume = IndicateursMensuelsPolicy.variation(volumeCourant, volumeReference, 1.0);
+            double variationMixte = StatutMensuelPolicy.variationMixte(variationCa, variationVolume);
+            m.setCaMoisAnalyse(caCourant);
+            m.setCasMoisAnalyse(volumeCourant);
+            m.setDateReferenceIndicateurs(dateReference);
+            m.setNombreMoisReference(nombreMoisReference);
+            m.setReferenceCa(caReference);
+            m.setReferenceVolume(volumeReference);
+            m.setVariationCa(variationCa);
+            m.setVariationVolume(variationVolume);
+            m.setVariationMixteSur100(variationMixte);
 
             // B. Performance (40%) : Rang percentile CA dans le portefeuille
             double performance = performanceMap.getOrDefault(m.getId(), 0.0);
@@ -129,88 +172,172 @@ public class SegmentationService {
             m.setPerformanceSur100(performance);
 
             // C. Poids économique (20%) : 50% CA normalisé + 50% Cas normalisé
-            double caPhys = caCourant;
-            double casPhys = casMap.getOrDefault(m.getId(), 0L).doubleValue();
+            double caPhys = caTotalParMedecin.getOrDefault(m.getId(), 0.0);
+            double casPhys = casTotauxParMedecin.getOrDefault(m.getId(), 0.0);
 
             double caNormalise = (caPhys / maxCa) * 100.0;
             double casNormalise = (casPhys / maxCas) * 100.0;
-            double poidsEconomique = (0.50 * caNormalise) + (0.50 * casNormalise);
+            double poidsEconomique = ScoreMetierPolicy.poidsEconomique(caNormalise, casNormalise);
             m.setCaNormaliseSur100(round(caNormalise));
             m.setVolumeNormaliseSur100(round(casNormalise));
             m.setMaxCaPortefeuille(round(maxCa));
             m.setMaxVolumePortefeuille(round(maxCas));
             m.setPoidsEcoSur100(poidsEconomique);
 
-            List<LocalDate> datesMedecin = extractionDonneesRepository.findDatesReceptionByMedecinId(m.getId());
-            int intervalleEffectif = calculateIntervalleEffectif(datesMedecin);
-            m.setIntervalleEffectif(intervalleEffectif);
-                long moisActifs = datesMedecin.stream()
-                    .map(YearMonth::from)
-                    .distinct()
-                    .count();
-                boolean ancienneteSuffisante = m.getDatePremiereCollaboration() != null
-                    && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(LocalDate.now());
-                m.setFiabilite(moisActifs >= 3 && ancienneteSuffisante
-                    ? "FIABLE"
-                    : moisActifs >= 2 ? "PARTIEL" : "NON_FIABLE");
-            int joursSansActivite = calculateDaysSinceLastActivity(datesMedecin);
-                m.setJoursSansActivite(joursSansActivite);
-            double scoreSilence = Math.min(100.0, (joursSansActivite / (double) intervalleEffectif) * 20.0);
-            double baisseReference = Math.max(0.0, -variationCa);
-            double baisseCourte = Math.max(0.0, -percentageDifference(caCourant,
-                    valueFor(caParMois, moisCourant.minusMonths(1), m.getId()), 300.0));
+            // D. Score de valeur global
+            double scoreValeur = ScoreMetierPolicy.scoreValeur(potentielSur100, performance, poidsEconomique);
+            scoreValeur = Math.round(scoreValeur * 100.0) / 100.0; // Arrondi à 2 décimales
+
+            // E. Détermination du segment (via règles de la table controle ou fallback A/B/C/D)
+            String segment = controleService.determinerEtatParScore(TypeControle.SEGEMENTS, scoreValeur);
+            if (segment == null) {
+                segment = ScoreMetierPolicy.segment(scoreValeur);
+            }
+            m.setScoreValeur(scoreValeur);
+            m.setSegment(segment);
+
+            List<LocalDate> datesMedecin = datesJusquaReference(
+                extractionDonneesRepository.findDatesReceptionByMedecinId(m.getId()), dateReference);
+            if (datesMedecin.isEmpty()) {
+                m.setCaMoisAnalyse(null);
+                m.setCasMoisAnalyse(null);
+                m.setReferenceCa(null);
+                m.setReferenceVolume(null);
+                m.setVariationCa(null);
+                m.setVariationVolume(null);
+                m.setVariationMixteSur100(null);
+            }
+            IndicateursMensuelsPolicy.SilenceMetrics silence = IndicateursMensuelsPolicy.silence(datesMedecin, dateReference);
+            double intervalleEffectifPrecise = silence.intervalleEffectif();
+            m.setIntervalleEffectif(intervalleEffectifPrecise);
+            m.setDateDerniereActiviteCalcul(silence.dateDerniereActivite());
+
+            long moisActifs = datesMedecin.stream()
+                .map(YearMonth::from)
+                .distinct()
+                .count();
+            moisActifsParMedecin.put(m.getId(), moisActifs);
+            boolean ancienneteSuffisante = m.getDatePremiereCollaboration() != null
+                && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(dateReference);
+            m.setFiabilite(moisActifs >= 3 && ancienneteSuffisante
+                ? "FIABLE"
+                : moisActifs >= 2 ? "PARTIEL" : "NON_FIABLE");
+
+            LocalDate derniereActivite = datesMedecin.isEmpty() ? null : datesMedecin.get(0);
+            Optional<RetourTerrain> conge = retourTerrainService.getHistorique(m).stream()
+                .filter(r -> r.getQualification() == com.vactis.model.medecin.QualificationVisite.CONGE_ABSENCE && r.getDateDepart() != null)
+                .findFirst();
+            int joursSansActivite = conge.isPresent()
+                ? CongeSilencePolicy.calculerJoursSansActiviteAjustes(
+                    derniereActivite, dateReference, conge.get().getDateDepart(), conge.get().getDateRetourPrevue(), conge.get().getDateRevue())
+                : silence.joursSansActivite();
+            m.setJoursSansActivite(datesMedecin.isEmpty() ? null : joursSansActivite);
+
+            double scoreSilence = conge.isPresent()
+                    ? Math.min(100.0, (joursSansActivite / intervalleEffectifPrecise) * 20.0)
+                    : silence.scoreSilence();
+            m.setScoreSilence(scoreSilence);
+            m.setSourceRythme(silence.sourceRythme());
+            m.setClasseSilence(conge.isPresent()
+                    ? IndicateursMensuelsPolicy.classeSilence(joursSansActivite / intervalleEffectifPrecise)
+                    : silence.classeSilence());
+
+            // R9 : Baisses sur variation mixte (référence et courte)
+                double varCaCourte = IndicateursMensuelsPolicy.variation(caCourant,
+                    valueFor(caParMois, moisCourant.minusMonths(1), m.getId()), 300.0);
+                double varVolumeCourte = IndicateursMensuelsPolicy.variation(volumeCourant,
+                    valueFor(volumeParMois, moisCourant.minusMonths(1), m.getId()), 1.0);
+            double varMixteCourte = StatutMensuelPolicy.variationMixte(varCaCourte, varVolumeCourte);
+
+            double baisseReference = Math.max(0.0, -variationMixte);
+            double baisseCourte = Math.max(0.0, -varMixteCourte);
             m.setBaisseReference(round(baisseReference));
             m.setBaisseCourte(round(baisseCourte));
 
             // Tendance Risque (60% baisse courte + 40% baisse référence)
             double tendanceRisque = Math.min(100.0, (0.40 * baisseReference) + (0.60 * baisseCourte));
             m.setTendanceRisque(round(tendanceRisque));
-            m.setScoreSilence(round(scoreSilence));
 
-            // Score Risque : [60% tendance risque + 40% silence] × poids valeur
-            double scoreRisque = (0.60 * tendanceRisque + 0.40 * scoreSilence) * (poidsEconomique / 100.0);
+            // Score Risque R9 : (60% tendance + 40% silence) × (0,70 × scoreValeur/100 + 0,30)
+            double scoreRisque = ScoreMetierPolicy.scoreRisque(tendanceRisque, scoreSilence, scoreValeur);
             m.setScoreRisque(round(scoreRisque));
 
-                // Intensité : 60% valeur + 40% risque selon le référentiel métier.
-                double intensiteRisque = Math.min(100.0, Math.max(0.0,
-                    (0.60 * scoreValeurDisponible(potentielSur100, performance, poidsEconomique))
-                        + (0.40 * scoreRisque)));
-            m.setIntensiteRisque(round(intensiteRisque));
+            // Intensité : 60% valeur + 40% risque
+            double intensiteArrondie = ScoreMetierPolicy.intensiteArrondie(scoreValeur, scoreRisque);
+            m.setIntensiteRisque(intensiteArrondie);
+            intensitesCalculees.add(intensiteArrondie);
+        }
 
-                // Score urgence: risque, phase, intensité et vieillissement recommandé.
-                double phaseScore = phaseUrgence(statutPourUrgence(m, variationMixte));
-                double vieillissementScore = Math.min(100.0, (joursSansActivite / (double) Math.max(intervalleEffectif, 1)) * 50.0);
-                double scoreUrgence = Math.min(100.0,
-                    (0.40 * scoreRisque) + (0.30 * phaseScore) + (0.20 * intensiteRisque) + (0.10 * vieillissementScore));
-            m.setScoreUrgence(round(scoreUrgence));
+        double medianeIntensite = ActionHorizonPolicy.percentile(intensitesCalculees, 0.50);
+        double p80Intensite = ActionHorizonPolicy.percentile(intensitesCalculees, 0.80);
 
-            if (scoreSilence >= 100.0 || scoreUrgence >= 75.0) {
+        // Seuil d'impact R11 : médiane du top 20% des CA moyens des médecins retenus
+        List<Double> caMoyensEligibles = medecins.stream()
+            .filter(m -> !"INACTIF".equalsIgnoreCase(m.getStatut())
+                      && !"EXCLU".equalsIgnoreCase(m.getStatut())
+                  && !"ONBOARDING".equalsIgnoreCase(m.getStatut())
+                  && !Boolean.TRUE.equals(m.getIsProfilIrregulier())
+                  && moisActifsParMedecin.getOrDefault(m.getId(), 0L) >= 2)
+            .map(Medecin::getCaMensuelMoyen)
+            .filter(Objects::nonNull)
+            .filter(ca -> ca > 0.0)
+            .toList();
+        List<Double> caMoyensPositifs = medecins.stream()
+            .map(Medecin::getCaMensuelMoyen)
+            .filter(Objects::nonNull)
+            .filter(ca -> ca > 0.0)
+            .toList();
+        double seuilImpact = IndicateursMensuelsPolicy.seuilImpact(caMoyensEligibles, caMoyensPositifs);
+
+        for (Medecin m : medecins) {
+            double intensite = m.getIntensiteRisque() == null ? 0.0 : m.getIntensiteRisque();
+            m.setNiveauIntensite(ScoreMetierPolicy.niveauIntensite(intensite, medianeIntensite, p80Intensite));
+
+            // Urgence R11 : brute puis facteur de matérialité
+            double intScore = ScoreMetierPolicy.pointsIntensite(intensite, medianeIntensite, p80Intensite);
+            double phaseScore = 100.0; // Action 1
+            double delaiScore = 0.0;
+            double scoreRisque = m.getScoreRisque() != null ? m.getScoreRisque() : 0.0;
+            double urgenceBrute = ScoreMetierPolicy.scoreUrgence(scoreRisque, phaseScore, intScore, delaiScore);
+
+            double caCourant = valueFor(caParMois, moisCourant, m.getId());
+            double perteCa = Math.max(0.0, (m.getReferenceCa() != null ? m.getReferenceCa() : 0.0) - caCourant);
+            double facteur = ScoreMetierPolicy.facteurMaterialite(perteCa, seuilImpact);
+
+            double urgenceFinale = ("INACTIF".equalsIgnoreCase(m.getStatut())
+                    || "EXCLU".equalsIgnoreCase(m.getStatut())
+                    || Boolean.TRUE.equals(m.getIsProfilIrregulier())
+                    || "BLOQUE".equalsIgnoreCase(m.getStatut()))
+                ? 0.0
+                : ScoreMetierPolicy.urgenceFinale(urgenceBrute, facteur);
+            m.setUrgenceBrute(urgenceBrute);
+            m.setPerteCa(perteCa);
+            m.setSeuilImpact(seuilImpact);
+            m.setFacteurMaterialite(facteur);
+            m.setScoreUrgence(urgenceFinale);
+
+            double scoreSilence = m.getScoreSilence() != null ? m.getScoreSilence() : 0.0;
+            if (scoreSilence >= 100.0 || urgenceFinale >= 75.0) {
                 m.setRisqueUrgence(RisqueUrgence.URGENT);
-            } else if (scoreSilence > 70.0 || scoreRisque >= 50.0 || scoreUrgence >= 50.0) {
+            } else if (scoreSilence > 70.0 || scoreRisque >= 50.0 || urgenceFinale >= 50.0) {
                 m.setRisqueUrgence(RisqueUrgence.ELEVE);
-            } else if (scoreRisque >= 25.0 || scoreUrgence >= 25.0) {
+            } else if (scoreRisque >= 25.0 || urgenceFinale >= 25.0) {
                 m.setRisqueUrgence(RisqueUrgence.MOYEN);
             } else {
                 m.setRisqueUrgence(RisqueUrgence.FAIBLE);
             }
-
-            // D. Score de valeur global
-            double scoreValeur = (0.40 * potentielSur100) + (0.40 * performance) + (0.20 * poidsEconomique);
-            scoreValeur = Math.round(scoreValeur * 100.0) / 100.0; // Arrondi à 2 décimales
-
-            // E. Détermination du segment (via règles de la table controle ou fallback A/B/C/D)
-            String segment;
-            segment = controleService.determinerEtatParScore(TypeControle.SEGEMENTS, scoreValeur);
-            if (segment == null) {
-                if (scoreValeur >= 75.0) segment = "A";
-                else if (scoreValeur >= 60.0) segment = "B";
-                else if (scoreValeur >= 45.0) segment = "C";
-                else segment = "D";
-            }
-
-            m.setScoreValeur(scoreValeur);
-            m.setSegment(segment);
         }
+
+            List<Medecin> medecinsAvecActionClassement = medecins.stream()
+                .filter(m -> m.getScoreUrgence() != null && m.getScoreUrgence() > 0.0)
+                .sorted(Comparator.comparing(Medecin::getScoreUrgence, Comparator.reverseOrder())
+                    .thenComparing(Medecin::getScoreRisque, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(Medecin::getPerteCa, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+            for (Medecin medecin : medecins) medecin.setRangUrgence(null);
+            for (int index = 0; index < medecinsAvecActionClassement.size(); index++) {
+                medecinsAvecActionClassement.get(index).setRangUrgence(index + 1);
+            }
 
         medecinRepository.saveAll(medecins);
         log.info("Recalcul de la segmentation Anapath terminé pour {} médecins.", totalMedecins);
@@ -218,6 +345,12 @@ public class SegmentationService {
 
     private double scoreValeurDisponible(double potentiel, double performance, double poidsEconomique) {
         return (0.40 * potentiel) + (0.40 * performance) + (0.20 * poidsEconomique);
+    }
+
+    static Comparator<Medecin> ordrePerformanceParCa(Map<Long, Double> caMoyenParMedecin) {
+        return Comparator.comparingDouble((Medecin medecin) ->
+                        caMoyenParMedecin.getOrDefault(medecin.getId(), 0.0))
+                .thenComparing(Medecin::getId);
     }
 
     private double phaseUrgence(String statut) {
@@ -250,19 +383,27 @@ public class SegmentationService {
         return values.getOrDefault(mois, Map.of()).getOrDefault(medecinId, 0.0);
     }
 
-    private double averageForPreviousMonths(Map<YearMonth, Map<Long, Double>> values, Medecin medecin, YearMonth mois) {
-        double total = 0.0;
+    private double averageForPreviousMonths(Map<YearMonth, Map<Long, Double>> values, Medecin medecin,
+                                           YearMonth mois, YearMonth premierMoisGrille) {
+        List<Double> moisDisponibles = new ArrayList<>();
         for (int offset = 1; offset <= 3; offset++) {
-            total += valueFor(values, mois.minusMonths(offset), medecin.getId());
+            YearMonth moisReference = mois.minusMonths(offset);
+            if (!moisReference.isBefore(premierMoisGrille)) {
+                moisDisponibles.add(valueFor(values, moisReference, medecin.getId()));
+            }
         }
-        return total / 3.0;
+        return IndicateursMensuelsPolicy.moyenneReference(moisDisponibles);
     }
 
     private double percentageDifference(double current, double reference, double minimumBase) {
         return ((current - reference) / Math.max(reference, minimumBase)) * 100.0;
     }
 
-    private int calculateIntervalleEffectif(List<LocalDate> dates) {
+    static List<LocalDate> datesJusquaReference(List<LocalDate> dates, LocalDate dateReference) {
+        return dates.stream().filter(date -> !date.isAfter(dateReference)).toList();
+    }
+
+    static int calculateIntervalleEffectif(List<LocalDate> dates) {
         if (dates.size() < 2) return 30;
         int count = Math.min(dates.size() - 1, 3);
         long total = 0;
@@ -272,8 +413,12 @@ public class SegmentationService {
         return Math.max(1, (int) Math.round(total / (double) count));
     }
 
-    private int calculateDaysSinceLastActivity(List<LocalDate> dates) {
-        return dates.isEmpty() ? 0 : Math.max(0, (int) ChronoUnit.DAYS.between(dates.get(0), LocalDate.now()));
+    static double calculateIntervalleEffectifPrecise(List<LocalDate> dates, LocalDate dateReference) {
+        return IndicateursMensuelsPolicy.silence(dates, dateReference).intervalleEffectif();
+    }
+
+    static int calculateDaysSinceLastActivity(List<LocalDate> dates, LocalDate dateReference) {
+        return IndicateursMensuelsPolicy.silence(dates, dateReference).joursSansActivite();
     }
 
     private double round(double value) {

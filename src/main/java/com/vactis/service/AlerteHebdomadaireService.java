@@ -56,24 +56,31 @@ public class AlerteHebdomadaireService {
      */
     @Transactional
     public List<AlerteHebdomadaire> executerBatchHebdomadaire() {
-        List<Medecin> medecins = medecinRepository.findAll();
+        return executerBatchHebdomadaire(LocalDate.now());
+        }
+
+    @Transactional
+    public List<AlerteHebdomadaire> refreshImportedDataset(LocalDate dateReference) {
+        alerteHebdomadaireRepository.deleteByStatutAlerte(StatutAlerte.A_TRAITER);
+        return executerBatchHebdomadaire(dateReference);
+    }
+
+        @Transactional
+    public List<AlerteHebdomadaire> executerBatchHebdomadaire(LocalDate dateEvaluation) {
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers();
         List<AlerteHebdomadaire> alertesCreees = new ArrayList<>();
-        LocalDate now = LocalDate.now();
 
         for (Medecin m : medecins) {
             String statut = m.getStatut() != null ? m.getStatut().toUpperCase() : "INACTIF";
             String segment = m.getSegment() != null ? m.getSegment().toUpperCase() : "D";
-            boolean statutEligible = Set.of("ACTIF", "ACTIF_STABLE", "PROGRESSION", "SURVEILLANCE", "RETENTION").contains(statut);
-            boolean segmentStrategique = "A".equals(segment) || "B".equals(segment);
-            boolean potentielQualifie = m.getNoteInput() != null && m.getNoteInput() >= 4.0;
             boolean fiabiliteSuffisante = "FIABLE".equalsIgnoreCase(m.getFiabilite()) || "PARTIEL".equalsIgnoreCase(m.getFiabilite());
             boolean impactSuffisant = (m.getScoreRisque() != null && m.getScoreRisque() >= 25.0)
                     || (m.getIntensiteRisque() != null && m.getIntensiteRisque() >= 25.0);
-            if (absenceEnCours(m, now)) {
+            if (absenceEnCours(m, dateEvaluation)) {
                 continue;
             }
-            if (!statutEligible || Boolean.TRUE.equals(m.getIsProfilIrregulier())) {
-                continue; // Le batch hebdomadaire ne modifie pas les statuts mensuels ni les profils irréguliers.
+            if (!Set.of("ACTIF", "ACTIF_STABLE", "PROGRESSION", "SURVEILLANCE", "RETENTION", "ACTIVITE_IRREGULIERE").contains(statut)) {
+                continue;
             }
 
             List<LocalDate> dates = extractionDonneesRepository.findDatesReceptionByMedecinId(m.getId());
@@ -85,56 +92,45 @@ public class AlerteHebdomadaireService {
             Set<YearMonth> moisActifs = dates.stream()
                     .map(YearMonth::from)
                     .collect(Collectors.toSet());
-            // Référence récente si elle est fiable; sinon historique, puis repli à 30 jours.
             LocalDate dateDerniere = dates.get(0);
-            LocalDate datePremiere = dates.get(dates.size() - 1);
-            double intervalleMoyen = 30.0;
-            if (dates.size() >= 3) {
-                long totalJours = ChronoUnit.DAYS.between(datePremiere, dateDerniere);
-                intervalleMoyen = Math.max(1.0, (double) totalJours / (dates.size() - 1));
-            } else if (dates.size() >= 2 && moisActifs.size() >= 2) {
-                long totalJours = ChronoUnit.DAYS.between(datePremiere, dateDerniere);
-                intervalleMoyen = Math.max(1.0, (double) totalJours / (dates.size() - 1));
-            }
+            boolean rythmeRecentFiable = SilenceAlertPolicy.rythmeRecentFiable(totalCas, moisActifs.size(), dates.size());
+            double intervalleMoyen = calculerIntervalleAttendu(dates, rythmeRecentFiable);
 
-            long joursSilence = ChronoUnit.DAYS.between(dateDerniere, now);
+            long joursSilence = ChronoUnit.DAYS.between(dateDerniere, dateEvaluation);
             if (joursSilence < 0) joursSilence = 0;
 
             // Référentiel: <1,5 aucune rupture; 1,5-<2 à surveiller; >=2 critique.
             double ratio = intervalleMoyen > 0 ? joursSilence / intervalleMoyen : 0.0;
 
-            if (ratio >= 1.5) {
+            SilenceAlertPolicy.NiveauRupture niveauRupture = SilenceAlertPolicy.niveauRupture(ratio);
+            if (niveauRupture != SilenceAlertPolicy.NiveauRupture.AUCUNE) {
                 TypeAlerte type = TypeAlerte.RUPTURE_RYTHME;
-                if (ratio >= 2.0) {
+                if (niveauRupture == SilenceAlertPolicy.NiveauRupture.CRITIQUE) {
                     type = TypeAlerte.CHURN_IMMINENT;
                 } else if (joursSilence >= 30) {
                     type = TypeAlerte.SILENCE_PROLONGE;
                 }
 
                 // Score urgence silence = 40% silence + 30% risque + 30% valeur.
-                double silenceScore = Math.min(100.0, Math.max(0.0, (ratio - 1.0) * 100.0));
                 double risqueScore = m.getScoreRisque() != null ? m.getScoreRisque() : 0.0;
                 double valeurScore = m.getScoreValeur() != null ? m.getScoreValeur() : 0.0;
-                double score = Math.min(100.0, (0.40 * silenceScore) + (0.30 * risqueScore) + (0.30 * valeurScore));
-                score = Math.round(score * 10.0) / 10.0;
+                double score = SilenceAlertPolicy.scoreUrgence(ratio, risqueScore, valeurScore);
 
-                boolean silenceCritique = ratio >= 2.0;
-                if (!silenceCritique || !segmentStrategique || !potentielQualifie || !fiabiliteSuffisante || !impactSuffisant) {
+                if (!SilenceAlertPolicy.alerteStrategiqueEligible(
+                    statut, segment, m.getNoteInput(), fiabiliteSuffisante, impactSuffisant,
+                    ratio, Boolean.TRUE.equals(m.getIsProfilIrregulier()))) {
                     continue;
                 }
 
-                m.setScoreUrgence(score);
-                medecinRepository.save(m);
-
                 // Vérifier si une alerte active existe déjà dans les 7 derniers jours
                 Optional<AlerteHebdomadaire> existante = alerteHebdomadaireRepository.findRecentActiveAlerte(
-                        m, now.minusDays(7), StatutAlerte.A_TRAITER
+                    m, dateEvaluation.minusDays(7), StatutAlerte.A_TRAITER
                 );
 
                 if (existante.isEmpty()) {
                     AlerteHebdomadaire alerte = new AlerteHebdomadaire();
                     alerte.setMedecin(m);
-                    alerte.setDateDetection(now);
+                    alerte.setDateDetection(dateEvaluation);
                     alerte.setJoursSilence((int) joursSilence);
                     alerte.setIntervalleMoyen(Math.round(intervalleMoyen * 10.0) / 10.0);
                     alerte.setScoreUrgenceSilence(score);
@@ -153,14 +149,36 @@ public class AlerteHebdomadaireService {
         return alertesCreees;
     }
 
+    double calculerIntervalleAttendu(List<LocalDate> dates, boolean rythmeRecentFiable) {
+        if (dates == null || dates.size() < 2) return 30.0;
+        List<LocalDate> ordonnees = dates.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted(Comparator.reverseOrder())
+                .toList();
+        if (ordonnees.size() < 2) return 30.0;
+
+        int intervalles = rythmeRecentFiable
+                ? Math.min(3, ordonnees.size() - 1)
+                : ordonnees.size() - 1;
+        long totalJours = 0L;
+        for (int index = 0; index < intervalles; index++) {
+            totalJours += ChronoUnit.DAYS.between(ordonnees.get(index + 1), ordonnees.get(index));
+        }
+        return Math.max(1.0, (double) totalJours / intervalles);
+    }
+
     private boolean absenceEnCours(Medecin medecin, LocalDate now) {
         List<RetourTerrain> historiques = retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
         if (historiques == null || historiques.isEmpty()) return false;
-        RetourTerrain dernier = historiques.get(0);
-        return dernier.getQualification() == QualificationVisite.CONGE_ABSENCE
-                && dernier.getDateDepart() != null
-                && !dernier.getDateDepart().isAfter(now)
-                && (dernier.getDateRetourPrevue() == null || !dernier.getDateRetourPrevue().isBefore(now));
+        return historiques.stream().anyMatch(retour -> {
+            if (retour.getQualification() != QualificationVisite.CONGE_ABSENCE
+                || retour.getDateDepart() == null
+                || retour.getDateDepart().isAfter(now)) return false;
+            LocalDate dateRepriseOuRevue = retour.getDateRetourPrevue() != null
+                ? retour.getDateRetourPrevue() : retour.getDateRevue();
+            return dateRepriseOuRevue == null || !dateRepriseOuRevue.isBefore(now);
+        });
     }
 
     public List<AlerteHebdomadaire> getAlertesActives() {

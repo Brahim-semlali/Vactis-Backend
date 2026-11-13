@@ -148,6 +148,7 @@ public class ActiviteTerrainService {
                         .commentaire(r.getCommentaire())
                         .statutVisite(getStatutSafe(r).name())
                         .qualification(getQualifSafe(r).name())
+                        .typeVisite(r.getTypeVisite() != null ? r.getTypeVisite().name() : "NON_RENSEIGNE")
                         .reclamation(Boolean.TRUE.equals(r.getReclamation()))
                         .build())
                 .collect(Collectors.toList());

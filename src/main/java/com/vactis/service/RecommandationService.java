@@ -6,6 +6,7 @@ import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
 import com.vactis.model.action.UrgenceAction;
 import com.vactis.model.medecin.Medecin;
+import com.vactis.service.Activite.ActiviteIrregulierePolicy;
 import com.vactis.repository.ActionRepository;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.time.YearMonth;
 import java.util.*;
 
@@ -39,15 +41,19 @@ public class RecommandationService {
      * 3. Irréguliers rentables (optimisation des pics)
      */
     public RecommandationsGlobalResponse getRecommandations() {
-        List<Medecin> allMedecins = medecinRepository.findAll();
+        List<Medecin> allMedecins = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
 
-        YearMonth nowYm = YearMonth.now();
-        YearMonth ymM1 = nowYm.minusMonths(1);
-        YearMonth ymM2 = nowYm.minusMonths(2);
-        YearMonth ymM3 = nowYm.minusMonths(3);
+        List<LocalDate> datesExtraction = extractionDonneesRepository.findAllDatesDescending();
+        YearMonth nowYm = datesExtraction.isEmpty()
+                ? YearMonth.now()
+                : YearMonth.from(datesExtraction.get(0));
+        YearMonth ymM = nowYm;
+        YearMonth ymM1 = ymM.minusMonths(1);
+        YearMonth ymM2 = ymM.minusMonths(2);
 
         Map<Long, Long> ca3DerniersMois = new HashMap<>();
-        for (YearMonth ym : List.of(ymM1, ymM2, ymM3)) {
+        for (YearMonth ym : List.of(ymM, ymM1, ymM2)) {
             List<Object[]> rows = extractionDonneesRepository.sumCaByMedecinAndDateRange(ym.atDay(1), ym.atEndOfMonth());
             for (Object[] row : rows) {
                 Long mId = (Long) row[0];
@@ -62,6 +68,38 @@ public class RecommandationService {
             totalCasMap.put((Long) row[0], ((Number) row[1]).longValue());
         }
 
+        Map<Long, Long> activeMonthsMap = new HashMap<>();
+        for (Object[] row : extractionDonneesRepository.countMoisDistinctsGroupedByMedecin()) {
+            activeMonthsMap.put((Long) row[0], ((Number) row[1]).longValue());
+        }
+        Map<Long, LocalDate> firstActivityMap = new HashMap<>();
+        for (Object[] row : extractionDonneesRepository.findPremiereDateReceptionGroupedByMedecin()) {
+            firstActivityMap.put((Long) row[0], (LocalDate) row[1]);
+        }
+        Map<Long, LocalDate> lastActivityMap = new HashMap<>();
+        for (Object[] row : extractionDonneesRepository.findDerniereDateReceptionGroupedByMedecin()) {
+            lastActivityMap.put((Long) row[0], (LocalDate) row[1]);
+        }
+        LocalDate dateReference = datesExtraction.isEmpty() ? nowYm.atEndOfMonth() : datesExtraction.get(0);
+        Map<Long, Double> reactivationScores = new HashMap<>();
+        List<Double> inactiveScores = new ArrayList<>();
+        for (Medecin medecin : allMedecins) {
+            if (!"INACTIF".equalsIgnoreCase(medecin.getStatut())) continue;
+            LocalDate lastActivity = lastActivityMap.get(medecin.getId());
+            double proximity = ReactivationPolicy.proximityScore(lastActivity, dateReference);
+            double regularity = ReactivationPolicy.regularityScore(
+                    activeMonthsMap.getOrDefault(medecin.getId(), 0L),
+                    firstActivityMap.get(medecin.getId()), dateReference);
+            double score = ReactivationPolicy.score(
+                    medecin.getScoreValeur() == null ? 0.0 : medecin.getScoreValeur(), proximity, regularity);
+            reactivationScores.put(medecin.getId(), score);
+            inactiveScores.add(score);
+        }
+        Map<Long, ReactivationPolicy.Priority> reactivationPriorities = new HashMap<>();
+        for (Map.Entry<Long, Double> entry : reactivationScores.entrySet()) {
+            reactivationPriorities.put(entry.getKey(), ReactivationPolicy.priority(entry.getValue(), inactiveScores));
+        }
+
         List<RecommandationItemResponse> devList = new ArrayList<>();
         List<RecommandationItemResponse> reactList = new ArrayList<>();
         List<RecommandationItemResponse> irregList = new ArrayList<>();
@@ -72,16 +110,15 @@ public class RecommandationService {
             String statut = m.getStatut() != null ? m.getStatut().toUpperCase() : "INACTIF";
             String segment = m.getSegment() != null ? m.getSegment().toUpperCase() : "D";
 
-                boolean potentielConfirme = m.getNoteInput() != null && m.getNoteInput() >= 4.0;
-                boolean statutEligibleDeveloppement = Set.of("ACTIF_STABLE", "PROGRESSION", "ACTIF").contains(statut);
-                boolean sousExploitationDetectee = m.getReferenceCa() != null
-                    && m.getCaMensuelMoyen() != null
-                    && m.getReferenceCa() - m.getCaMensuelMoyen() > 0;
+            double sousExploitation = RecommendationPolicy.sousExploitation(m.getReferenceCa(), m.getCaMensuelMoyen());
+            boolean eligibleDeveloppement = RecommendationPolicy.eligibleDeveloppement(
+                    statut,
+                    Boolean.TRUE.equals(m.getIsProfilIrregulier()),
+                    m.getPotentielSur100(),
+                    m.getNoteInput(),
+                    sousExploitation);
 
-                // 1. DÉVELOPPEMENT : sous-exploitation et potentiel confirmé ou note >= 4.
-            if (!Boolean.TRUE.equals(m.getIsProfilIrregulier()) &&
-                    ("A".equals(segment) || "B".equals(segment)) &&
-                    statutEligibleDeveloppement && sousExploitationDetectee && potentielConfirme) {
+            if (eligibleDeveloppement) {
                 devList.add(RecommandationItemResponse.builder()
                         .medecinId(m.getId())
                         .nomMedecin("Dr " + m.getNom() + " " + (m.getPrenom() != null ? m.getPrenom() : ""))
@@ -93,14 +130,28 @@ public class RecommandationService {
                         .caMoyenMensuel(caMoyen3Mois)
                         .totalCasHistorique(totalCas)
                         .noteTerrain(m.getNoteInput())
-                        .justification("Prescripteur Segment " + segment + " stable. Potentiel de consolidation et d'extension vers des analyses complexes.")
+                        .potentielSur100(m.getPotentielSur100())
+                        .sousExploitation(sousExploitation)
+                        .scoreOpportunite((m.getScoreValeur() == null ? 0.0 : m.getScoreValeur()) * sousExploitation)
+                        .scoreValeur(m.getScoreValeur())
+                        .scoreRisque(m.getScoreRisque())
+                        .scoreSilence(m.getScoreSilence())
+                        .joursSansActivite(m.getJoursSansActivite())
+                        .intervalleEffectif(m.getIntervalleEffectif())
+                        .referenceCa(m.getReferenceCa())
+                        .realisationObjectifPct(m.getReferenceCa() != null && m.getReferenceCa() > 0
+                            ? Math.round(caMoyen3Mois * 1000.0 / m.getReferenceCa()) / 10.0 : 0.0)
+                        .fiabilite(m.getFiabilite())
+                        .justification("Sous-exploitation x" + String.format(java.util.Locale.FRANCE, "%.1f", sousExploitation)
+                            + " et potentiel confirmé. Potentiel de consolidation à qualifier.")
                         .pitchCommercial("Présenter les techniques de pointe du laboratoire (biologie moléculaire / immuno) et sécuriser l'exclusivité des flux.")
                         .build());
             }
 
-                // 2. RÉACTIVATION : statut inactif et priorité moyenne ou haute.
-                boolean prioriteReactivation = m.getRisqueUrgence() != null
-                    && Set.of("MOYEN", "ELEVE", "URGENT").contains(m.getRisqueUrgence().name());
+                // 2. RÉACTIVATION : conserver les priorités moyenne et haute du classement des inactifs.
+                ReactivationPolicy.Priority priorite = reactivationPriorities.get(m.getId());
+                boolean prioriteReactivation = priorite == ReactivationPolicy.Priority.HIGH
+                        || priorite == ReactivationPolicy.Priority.MEDIUM;
                 if ("INACTIF".equals(statut) && prioriteReactivation) {
                 reactList.add(RecommandationItemResponse.builder()
                         .medecinId(m.getId())
@@ -113,6 +164,21 @@ public class RecommandationService {
                         .caMoyenMensuel(caMoyen3Mois)
                         .totalCasHistorique(totalCas)
                         .noteTerrain(m.getNoteInput())
+                        .potentielSur100(m.getPotentielSur100())
+                        .scoreValeur(m.getScoreValeur())
+                        .scoreRisque(m.getScoreRisque())
+                        .scoreSilence(m.getScoreSilence())
+                        .scoreReactivation(reactivationScores.get(m.getId()))
+                        .prioriteReactivation(priorite.name())
+                        .joursSansActivite(m.getJoursSansActivite())
+                        .intervalleEffectif(m.getIntervalleEffectif())
+                        .referenceCa(m.getReferenceCa())
+                        .realisationObjectifPct(m.getReferenceCa() != null && m.getReferenceCa() > 0
+                            ? Math.round(caMoyen3Mois * 1000.0 / m.getReferenceCa()) / 10.0 : 0.0)
+                        .fiabilite(m.getFiabilite())
+                        .caRecuperationEstime(m.getCaBaseline() == null ? 0L : m.getCaBaseline().longValue())
+                        .ancienneteMois(ancienneteMois(m))
+                        .decisionDirection("À arbitrer")
                         .justification("Compte historique significatif (" + totalCas + " dossiers cumulés) sans activité récente régulière.")
                         .pitchCommercial("Visite de reconquête : sonder les éventuels irritants logistiques ou informatiques et réapprovisionner en kits de prélèvement.")
                         .build());
@@ -131,6 +197,18 @@ public class RecommandationService {
                         .caMoyenMensuel(caMoyen3Mois)
                         .totalCasHistorique(totalCas)
                         .noteTerrain(m.getNoteInput())
+                        .potentielSur100(m.getPotentielSur100())
+                        .scoreValeur(m.getScoreValeur())
+                        .scoreRisque(m.getScoreRisque())
+                        .scoreSilence(m.getScoreSilence())
+                        .tauxPresencePct(ActiviteIrregulierePolicy.tauxPresencePct(
+                            activeMonthsMap.get(m.getId()), firstActivityMap.get(m.getId()), dateReference))
+                        .joursSansActivite(m.getJoursSansActivite())
+                        .intervalleEffectif(m.getIntervalleEffectif())
+                        .referenceCa(m.getReferenceCa())
+                        .realisationObjectifPct(m.getReferenceCa() != null && m.getReferenceCa() > 0
+                            ? Math.round(caMoyen3Mois * 1000.0 / m.getReferenceCa()) / 10.0 : 0.0)
+                        .fiabilite(m.getFiabilite())
                         .justification("Prescripteur à activité cyclique validée (" + totalCas + " dossiers). Alertes de rétention neutralisées.")
                         .pitchCommercial("Synchroniser les périodes de présence (vacations chirurgicales / clinique) pour capter 100% des prélèvements lors des pics.")
                         .build());
@@ -138,8 +216,10 @@ public class RecommandationService {
         }
 
         // Tri par pertinence économique
-        devList.sort(Comparator.comparing(RecommandationItemResponse::getCaMoyenMensuel).reversed());
-        reactList.sort(Comparator.comparing(RecommandationItemResponse::getTotalCasHistorique).reversed());
+        devList.sort(Comparator.comparing(RecommandationItemResponse::getScoreOpportunite,
+            Comparator.nullsLast(Comparator.reverseOrder())));
+        reactList.sort(Comparator.comparing(RecommandationItemResponse::getScoreReactivation,
+            Comparator.nullsLast(Comparator.reverseOrder())));
         irregList.sort(Comparator.comparing(RecommandationItemResponse::getTotalCasHistorique).reversed());
 
         return RecommandationsGlobalResponse.builder()
@@ -154,6 +234,9 @@ public class RecommandationService {
     public Action creerActionDepuisRecommandation(Long medecinId, String typeRecommandation, String username) {
         Medecin m = medecinRepository.findById(medecinId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable"));
+        if (medecinRepository.isPseudoMedecin(m)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Médecin introuvable");
+        }
 
         Action action = new Action();
         action.setMedecin(m);
@@ -162,6 +245,8 @@ public class RecommandationService {
         action.setSegment(m.getSegment() != null ? m.getSegment() : "B");
         action.setLieuOrganisme(m.getOrganisme() != null ? m.getOrganisme() : "Cabinet médical");
         action.setEtatAction(EtatAction.PLANIFIEE);
+        action.setSourceRecommandation(typeRecommandation == null ? "DEVELOPPEMENT" : typeRecommandation.toUpperCase());
+        action.setDecisionRecommandation("ACCEPTEE");
 
         String type = typeRecommandation != null ? typeRecommandation.toUpperCase() : "DEVELOPPEMENT";
         switch (type) {
@@ -189,5 +274,10 @@ public class RecommandationService {
         }
 
         return actionRepository.save(action);
+    }
+
+    private Long ancienneteMois(Medecin medecin) {
+        if (medecin.getDatePremiereCollaboration() == null) return null;
+        return ChronoUnit.MONTHS.between(medecin.getDatePremiereCollaboration(), LocalDate.now());
     }
 }

@@ -20,7 +20,6 @@ public interface SystemSettingsRepository extends JpaRepository<SystemSettings, 
             if (settings.getMaxTentativesConnexion() == null) settings.setMaxTentativesConnexion(5);
             if (settings.getDureeBlocageMinutes() == null) settings.setDureeBlocageMinutes(15);
             if (settings.getJournalConnexionActif() == null) settings.setJournalConnexionActif(true);
-            if (settings.getBridgeGoalTarget() == null) settings.setBridgeGoalTarget(5000000L);
             if (settings.getUpdatedAt() == null) settings.setUpdatedAt(java.time.LocalDateTime.now());
             save(settings);
             return settings;
@@ -28,7 +27,6 @@ public interface SystemSettingsRepository extends JpaRepository<SystemSettings, 
         SystemSettings defaults = new SystemSettings();
         defaults.setDureeSessionMinutes(60);
         defaults.setDureeInactiviteJours(90);
-        defaults.setBridgeGoalTarget(5000000L);
         defaults.setUpdatedAt(java.time.LocalDateTime.now());
         return save(defaults);
     }

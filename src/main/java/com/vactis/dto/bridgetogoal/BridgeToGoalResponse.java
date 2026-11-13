@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.util.List;
 
 @Data
 @Builder
@@ -18,6 +19,11 @@ public class BridgeToGoalResponse {
     private Long churnEstime;
     private Long caProjete;
     private Long targetBudget;
+    private Long annualTargetBudget;
+    private Long monthlyTargetBudget;
+    private Long previousMonthRevenue;
+    private String monthlyTargetMethod;
+    private Double monthlyTargetInputValue;
     private Long gap;
     private Integer actionsRequises;
     private String statutTrajectoire; // ATTEINT, TENDU, CRITIQUE
@@ -42,11 +48,13 @@ public class BridgeToGoalResponse {
     private Integer moisRestants;
     private Long effortAdditionnelMensuel;
     private String statutYtd;
+    private String decisionCouverture;
     private Integer nbMedecinsSegmentA;
     private Integer nbMedecinsSegmentB;
     private Integer nbMedecinsSegmentC;
     private Integer nbMedecinsSegmentD;
     private Long nonAffectesCount;
+    private Long caNonAffectes;
     private Long medecinsIdentifies;
     private Long caMoyenSegmentA;
     private Long caMoyenSegmentB;
@@ -56,4 +64,5 @@ public class BridgeToGoalResponse {
     private Integer nouveauxMedecinsSegmentB;
     private Integer nouveauxMedecinsSegmentC;
     private Integer nouveauxMedecinsSegmentD;
+    private List<BridgeOpportunityItem> opportunites;
 }

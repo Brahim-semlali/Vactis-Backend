@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
@@ -105,6 +106,15 @@ public class Medecin {
 
     private Double referenceVolume;
 
+    @JsonProperty("referenceCas")
+    public Double getReferenceCas() {
+        return referenceVolume;
+    }
+
+    @JsonProperty("variationCas")
+    public Double getVariationCas() {
+        return variationVolume;
+    }
     private Double variationCa;
 
     private Double variationVolume;
@@ -117,9 +127,23 @@ public class Medecin {
 
     private String fiabilite;
 
-    private Integer intervalleEffectif;
+    private Double intervalleEffectif;
 
     private Double scoreSilence;
+
+    private String sourceRythme;
+
+    private String classeSilence;
+
+    private Double caMoisAnalyse;
+
+    private Double casMoisAnalyse;
+
+    private LocalDate dateReferenceIndicateurs;
+
+    private LocalDate dateDerniereActiviteCalcul;
+
+    private Integer nombreMoisReference;
 
     private Double scoreRisque;
 
@@ -132,8 +156,21 @@ public class Medecin {
     @Column(name = "score_urgence")
     private Double scoreUrgence;
 
+    private Double urgenceBrute;
+
+    private Double perteCa;
+
+    private Double seuilImpact;
+
+    private Double facteurMaterialite;
+
+    private Integer rangUrgence;
+
     @Column(name = "intensite_risque")
     private Double intensiteRisque;
+
+    @Column(name = "niveau_intensite", length = 20)
+    private String niveauIntensite;
 
     @Column(name = "tendance_risque")
     private Double tendanceRisque;

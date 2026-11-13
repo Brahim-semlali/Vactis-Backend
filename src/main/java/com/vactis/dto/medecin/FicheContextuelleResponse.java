@@ -15,6 +15,9 @@ public class FicheContextuelleResponse {
     private String statutExplanation;
     private String commentaireMoteurTitre;
     private String commentaireMoteurAction;
+    private String commentaireMoteurResume;
+    private String commentaireMoteurDetail;
+    private String commentaireMoteurDirection;
     private String silenceRadioStatus;
     private Integer joursSansActivite;
     private Integer frequenceJours;

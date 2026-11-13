@@ -84,7 +84,7 @@ class MedecinServiceTest {
         YearMonth monthMinus2 = currentMonth.minusMonths(2);
         YearMonth monthMinus3 = currentMonth.minusMonths(3);
 
-        when(medecinRepository.findAll()).thenReturn(List.of(medecin));
+        when(medecinRepository.findAllWithImportedDossiers()).thenReturn(List.of(medecin));
         when(medecinRepository.saveAll(anyList())).thenReturn(List.of(medecin));
         when(extractionDonneesRepository.countCasGroupedByMedecin()).thenReturn(Collections.<Object[]>emptyList());
 
@@ -118,6 +118,27 @@ class MedecinServiceTest {
     }
 
     @Test
+    void leavesRevenueAndCasesUnknownWhenDoctorHasNoExtractionHistory() {
+        Medecin medecin = new Medecin();
+        medecin.setId(2L);
+        YearMonth currentMonth = YearMonth.now();
+
+        when(medecinRepository.findAllWithImportedDossiers()).thenReturn(List.of(medecin));
+        when(medecinRepository.saveAll(anyList())).thenReturn(List.of(medecin));
+        when(extractionDonneesRepository.countCasGroupedByMedecin()).thenReturn(Collections.<Object[]>emptyList());
+        when(extractionDonneesRepository.sumCaByMedecinAndDateRange(any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(Collections.<Object[]>emptyList());
+        when(extractionDonneesRepository.countCasByMedecinAndDateRange(any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(Collections.<Object[]>emptyList());
+
+        medecinService.recalculerStatutsEtSegmentsDynamiques(currentMonth.atEndOfMonth());
+
+        assertEquals(null, medecin.getCaMois());
+        assertEquals(null, medecin.getCaBaseline());
+        assertEquals(null, medecin.getTotalCas());
+    }
+
+    @Test
     void getMedecinsGeolocalisesMapsPropertiesCorrectly() {
         Medecin m = new Medecin();
         m.setId(12L);
@@ -132,7 +153,7 @@ class MedecinServiceTest {
         m.setLatitude(31.6295);
         m.setLongitude(-7.9811);
 
-        when(medecinRepository.findByLatitudeIsNotNullAndLongitudeIsNotNull()).thenReturn(List.of(m));
+        when(medecinRepository.findAllWithImportedDossiers()).thenReturn(List.of(m));
 
         var result = medecinService.getMedecinsGeolocalises();
         assertEquals(1, result.size());

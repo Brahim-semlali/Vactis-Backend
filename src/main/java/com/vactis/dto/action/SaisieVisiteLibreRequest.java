@@ -25,6 +25,7 @@ public class SaisieVisiteLibreRequest {
     private String qualification;
     private LocalDate dateDepart;
     private LocalDate dateRetourPrevue;
+    private LocalDate dateRevue;
     private String commentaire;
     private Double noteTerrain;
     private String prochaineAction;

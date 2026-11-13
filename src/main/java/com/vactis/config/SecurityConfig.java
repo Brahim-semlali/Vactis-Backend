@@ -68,11 +68,17 @@ public class SecurityConfig {
                             "/api/admin/settings/**"
                         ).hasAnyAuthority("ROLE_ADMIN", "MENU:/parametres-systeme")
                         .requestMatchers(
+                            "/api/admin/excel/**"
+                        ).hasAnyAuthority("ROLE_ADMIN", "MENU:/import-export-excel")
+                        .requestMatchers(
                             "/api/admin/**"
                         ).hasAnyAuthority("ROLE_ADMIN", "MENU:/users", "MENU:/roles")
                         .requestMatchers(
                             "/api/controle/**"
                         ).hasAuthority("MENU:/controle")
+                        .requestMatchers(
+                            "/api/notifications/**"
+                        ).hasAuthority("MENU:/reclamations")
                         .requestMatchers(
                             "/api/menu/AddMenu",
                             "/api/menu/Delete/**",

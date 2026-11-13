@@ -16,6 +16,7 @@ import jakarta.persistence.Table;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -55,7 +56,16 @@ public class SystemSettings {
     private Boolean journalConnexionActif = true;
 
     @Column(name = "bridge_goal_target")
-    private Long bridgeGoalTarget = 5000000L;
+    private Long bridgeGoalTarget;
+
+    @Column(name = "bridge_goal_method", length = 20)
+    private String bridgeGoalMethod = "DIRECT";
+
+    @Column(name = "bridge_goal_input_value", precision = 14, scale = 2)
+    private BigDecimal bridgeGoalInputValue;
+
+    @Column(name = "bridge_goal_reference_revenue")
+    private Long bridgeGoalReferenceRevenue;
 
     @Column(name = "laboratoire_latitude")
     private Double laboratoireLatitude;
@@ -78,7 +88,7 @@ public class SystemSettings {
                 || mdpLongueurMinimale == null || mdpLongueurMinimale <= 0
                 || maxTentativesConnexion == null || maxTentativesConnexion <= 0 || dureeBlocageMinutes == null || dureeBlocageMinutes < 0
                 || mdpExigeMajuscule == null || mdpExigeChiffre == null || mdpExigeCaractereSpecial == null || journalConnexionActif == null
-                || bridgeGoalTarget == null || bridgeGoalTarget <= 0) {
+                || (bridgeGoalTarget != null && bridgeGoalTarget <= 0)) {
             throw new IllegalArgumentException("Les paramètres doivent respecter des valeurs positives; les expirations et blocages peuvent être à zéro");
         }
         if (updatedAt == null) {

@@ -62,6 +62,11 @@ public class ActiviteController {
         return ResponseEntity.ok(activiteService.getMoisDisponibles());
     }
 
+        @GetMapping("/terrain/mois-disponibles")
+        public ResponseEntity<List<String>> getMoisTerrainDisponibles() {
+            return ResponseEntity.ok(activiteService.getMoisTerrainDisponibles());
+        }
+
     // --- Niveau 2 — Dynamique du portefeuille médecins ---
 
     // Répartition des 8 statuts VACTIS pour le mois M

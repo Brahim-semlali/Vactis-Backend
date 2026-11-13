@@ -1,5 +1,6 @@
 package com.vactis.dto.system;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record SystemSettingsResponse(
@@ -13,6 +14,9 @@ public record SystemSettingsResponse(
         Integer dureeBlocageMinutes,
         Boolean journalConnexionActif,
         Long bridgeGoalTarget,
+        String bridgeGoalMethod,
+        BigDecimal bridgeGoalInputValue,
+        Long bridgeGoalReferenceRevenue,
         LocalDateTime updatedAt,
         String updatedBy
 ) {}

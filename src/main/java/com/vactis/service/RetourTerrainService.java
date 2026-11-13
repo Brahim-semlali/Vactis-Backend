@@ -127,6 +127,14 @@ public class RetourTerrainService {
         return retourTerrainRepository.findFirstByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
     }
 
+    // Retourne l'historique complet des visites pour un médecin
+    public List<RetourTerrain> getHistorique(Medecin medecin) {
+        if (medecin == null) {
+            return List.of();
+        }
+        return retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
+    }
+
     // Retourne la dernière visite enregistrée pour un médecin identifié par son id
     public Optional<RetourTerrain> getDerniereVisite(Long medecinId) {
         Medecin medecin = medecinRepository.findById(medecinId)

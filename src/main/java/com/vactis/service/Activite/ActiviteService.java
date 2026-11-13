@@ -28,26 +28,11 @@ public class ActiviteService {
 
     private static final DateTimeFormatter YYYY_MM = DateTimeFormatter.ofPattern("yyyy-MM");
 
-    // Retourne la liste des mois disponibles en base (labo + retours terrain + mois actuel), du plus récent au plus ancien
+    // Retourne la liste des mois disponibles en base (labo + retours terrain), du plus récent au plus ancien
     public List<String> getMoisDisponibles() {
         Set<String> monthsSet = new LinkedHashSet<>();
 
-        // 1. Mois actuel
-        monthsSet.add(YearMonth.now().format(YYYY_MM));
-
-        // 2. Mois des retours terrain
-        try {
-            List<LocalDate> datesRetour = retourTerrainRepository.findAllDatesDescending();
-            for (LocalDate d : datesRetour) {
-                if (d != null) {
-                    monthsSet.add(d.format(YYYY_MM));
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Erreur récupération dates retours terrain: {}", e.getMessage());
-        }
-
-        // 3. Mois de l'extraction labo
+        // 1. Mois de l'extraction labo (données importées)
         try {
             List<LocalDate> datesLabo = extractionDonneesRepository.findAllDatesDescending();
             for (LocalDate d : datesLabo) {
@@ -59,10 +44,36 @@ public class ActiviteService {
             log.warn("Erreur récupération dates labo: {}", e.getMessage());
         }
 
+        // 2. Repli sur les retours terrain uniquement si aucune extraction labo n'existe
+        if (monthsSet.isEmpty()) {
+            try {
+                List<LocalDate> datesRetour = retourTerrainRepository.findAllDatesDescending();
+                for (LocalDate d : datesRetour) {
+                    if (d != null) {
+                        monthsSet.add(d.format(YYYY_MM));
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Erreur récupération dates retours terrain: {}", e.getMessage());
+            }
+        }
+
+        if (monthsSet.isEmpty()) {
+            monthsSet.add(YearMonth.now().format(YYYY_MM));
+        }
+
         List<String> months = new ArrayList<>(monthsSet);
         months.sort(Comparator.reverseOrder());
         return months;
     }
+
+        public List<String> getMoisTerrainDisponibles() {
+            return retourTerrainRepository.findAllDatesDescending().stream()
+                    .filter(Objects::nonNull)
+                    .map(date -> YearMonth.from(date).format(YYYY_MM))
+                    .distinct()
+                    .toList();
+        }
 
     // Calcule les KPIs d'activité (CA, cas, médecins actifs, non affectés) pour un mois donné
     public KpiMensuelResponse getKpisMensuels(String moisParam) {
@@ -72,11 +83,20 @@ public class ActiviteService {
 
         Long caMoisTotal = extractionDonneesRepository.sumPrixAPayerByDateRange(startDate, endDate);
         Long casMoisTotal = extractionDonneesRepository.countCasByDateRange(startDate, endDate);
-        Long medecinsAvecActivite = extractionDonneesRepository.countMedecinsDistinctsByDateRange(startDate, endDate);
-        Long portefeuilleMedecins = medecinRepository.count();
-        Long portefeuilleCA = extractionDonneesRepository.sumPrixAPayerWithMedecinByDateRange(startDate, endDate);
-        Long nonAffectesCount = extractionDonneesRepository.countNonAffectesByDateRange(startDate, endDate);
-        Long nonAffectesCA = extractionDonneesRepository.sumPrixAPayerNonAffectesByDateRange(startDate, endDate);
+        List<Long> medecinIdsIdentifiables = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(medecin -> !medecinRepository.isPseudoMedecin(medecin))
+            .map(com.vactis.model.medecin.Medecin::getId)
+            .filter(Objects::nonNull)
+            .toList();
+        Long medecinsAvecActivite = medecinIdsIdentifiables.isEmpty() ? 0L
+            : extractionDonneesRepository.countIdentifiedDoctorsByDateRange(startDate, endDate, medecinIdsIdentifiables);
+        Long portefeuilleMedecins = (long) medecinIdsIdentifiables.size();
+        Long portefeuilleCA = medecinIdsIdentifiables.isEmpty() ? 0L
+            : extractionDonneesRepository.sumPrixAPayerForIdentifiedDoctorsByDateRange(startDate, endDate, medecinIdsIdentifiables);
+        Long nonAffectesCount = medecinIdsIdentifiables.isEmpty() ? casMoisTotal
+            : extractionDonneesRepository.countCasesForUnidentifiedDoctorsByDateRange(startDate, endDate, medecinIdsIdentifiables);
+        Long nonAffectesCA = medecinIdsIdentifiables.isEmpty() ? caMoisTotal
+            : extractionDonneesRepository.sumPrixAPayerForUnidentifiedDoctorsByDateRange(startDate, endDate, medecinIdsIdentifiables);
 
         double nonAffectesPct = 0.0;
         if (casMoisTotal != null && casMoisTotal > 0) {
@@ -179,6 +199,13 @@ public class ActiviteService {
             } catch (Exception e) {
                 log.warn("Format de mois invalide: {}, fallback au mois disponible ou actuel.", moisParam);
             }
+        }
+        try {
+            List<LocalDate> datesLabo = extractionDonneesRepository.findAllDatesDescending();
+            if (!datesLabo.isEmpty() && datesLabo.get(0) != null) {
+                return YearMonth.from(datesLabo.get(0));
+            }
+        } catch (Exception ignored) {
         }
         List<String> disponibles = getMoisDisponibles();
         if (!disponibles.isEmpty()) {

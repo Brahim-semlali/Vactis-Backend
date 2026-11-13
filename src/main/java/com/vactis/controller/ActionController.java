@@ -99,7 +99,14 @@ public class ActionController {
 
     // Récupère les données de la fiche contextuelle d'un médecin
     @GetMapping("/medecins/{medecinId}/fiche-contextuelle")
-    public FicheContextuelleResponse getFicheContextuelle(@PathVariable Long medecinId) {
-        return actionService.getFicheContextuelle(medecinId);
+    public FicheContextuelleResponse getFicheContextuelle(
+            @PathVariable Long medecinId,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        boolean isPilotage = authentication != null && authentication.getAuthorities().stream().anyMatch(a -> {
+            String auth = a.getAuthority().toUpperCase();
+            return auth.contains("ADMIN") || auth.contains("DIRECTION") || auth.contains("PILOTAGE");
+        });
+        return actionService.getFicheContextuelle(medecinId, isPilotage);
     }
 }

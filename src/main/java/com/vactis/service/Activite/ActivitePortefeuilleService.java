@@ -1,9 +1,15 @@
 package com.vactis.service.Activite;
 
 import com.vactis.dto.activite.*;
+import com.vactis.model.action.StatutPlanRetention;
+import com.vactis.model.action.TypeEtapeRetention;
 import com.vactis.model.medecin.Medecin;
+import com.vactis.model.medecin.QualificationVisite;
+import com.vactis.model.medecin.RetourTerrain;
+import com.vactis.repository.ActionRepository;
 import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
+import com.vactis.repository.RetourTerrainRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +29,8 @@ public class ActivitePortefeuilleService {
 
     private final ExtractionDonneesRepository extractionDonneesRepository;
     private final MedecinRepository medecinRepository;
+    private final RetourTerrainRepository retourTerrainRepository;
+    private final ActionRepository actionRepository;
 
     private static final DateTimeFormatter YYYY_MM = DateTimeFormatter.ofPattern("yyyy-MM");
 
@@ -32,6 +40,7 @@ public class ActivitePortefeuilleService {
             "actif_stable",      2,
             "surveillance",      3,
             "retention",         4,
+            "activite_irreguliere", 4,
             "onboarding",        5,
             "a_reactiver",       6,
             "inactif",           7,
@@ -46,6 +55,7 @@ public class ActivitePortefeuilleService {
             "actif_stable",      "Activité stable.",
             "surveillance",      "Signal à suivre.",
             "retention",         "Risque commercial.",
+            "activite_irreguliere", "Activité intermittente à qualifier.",
             "onboarding",        "Nouveau potentiel.",
             "a_reactiver",       "Reprise à qualifier (manuel).",
             "inactif",           "Hors cycle actif (> 60 jours).",
@@ -60,6 +70,7 @@ public class ActivitePortefeuilleService {
             "actif_stable",      "green",
             "surveillance",      "orange",
             "retention",         "red",
+            "activite_irreguliere", "orange",
             "onboarding",        "blue",
             "a_reactiver",       "orange",
             "inactif",           "gray",
@@ -68,16 +79,17 @@ public class ActivitePortefeuilleService {
             "exclu",             "gray"
     );
 
-    // Ordre d'affichage dans la grille (7 statuts officiels)
+    // Ordre d'affichage dans la grille des statuts de pilotage.
     private static final List<String> ORDRE_AFFICHAGE = List.of(
             "progression", "actif_stable", "surveillance", "retention",
-            "onboarding", "a_reactiver", "inactif"
+            "onboarding", "activite_irreguliere", "a_reactiver", "inactif"
     );
 
     // Calcule la répartition des 8 statuts VACTIS pour tous les médecins sur le mois M (avec liste des médecins par statut)
     public StatutRepartitionResponse getRepartitionStatuts(String moisParam) {
         YearMonth ym = parseOrGetDefaultMois(moisParam);
-        List<Medecin> medecins = medecinRepository.findAll();
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
 
         Map<Long, String> statutMap = buildStatutMapForMonth(ym, medecins);
         Map<String, Long> caM   = buildCaMap(ym);
@@ -116,7 +128,8 @@ public class ActivitePortefeuilleService {
         YearMonth ymM   = parseOrGetDefaultMois(moisParam);
         YearMonth ymMm1 = ymM.minusMonths(1);
 
-        List<Medecin> medecins = medecinRepository.findAll();
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
 
         Map<Long, String> statutsM   = buildStatutMapForMonth(ymM, medecins);
         Map<Long, String> statutsMm1 = buildStatutMapForMonth(ymMm1, medecins);
@@ -163,7 +176,8 @@ public class ActivitePortefeuilleService {
         YearMonth ymM   = parseOrGetDefaultMois(moisParam);
         YearMonth ymMm1 = ymM.minusMonths(1);
 
-        List<Medecin> medecins = medecinRepository.findAll();
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m)).toList();
 
         Map<Long, String> statutsM   = buildStatutMapForMonth(ymM, medecins);
         Map<Long, String> statutsMm1 = buildStatutMapForMonth(ymMm1, medecins);
@@ -242,8 +256,8 @@ public class ActivitePortefeuilleService {
         Map<String, Long> mapMm1 = isCa ? buildCaMap(ymMm1) : buildCasMap(ymMm1);
 
         // Exclure les pseudo-médecins (dossiers non affectés importés avec un libellé de repli)
-        List<Medecin> medecins = medecinRepository.findAll().stream()
-                .filter(m -> !isPseudoMedecin(m))
+        List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers().stream()
+            .filter(m -> !medecinRepository.isPseudoMedecin(m))
                 .collect(Collectors.toList());
 
         record MedecinDelta(Medecin medecin, long valM, long valMm1, long delta) {}
@@ -288,21 +302,6 @@ public class ActivitePortefeuilleService {
      * Règle : on exclut les médecins dont le nom (après nettoyage) est vide, null, ou dans la liste
      * des libellés de repli connus.
      */
-    private static final Set<String> NOMS_EXCLUS_TOP = Set.of(
-            "inconnu", "inconnu medecin", "inconnu médecin",
-            "précisé non", "precise non", "non précisé", "non precise",
-            "nr", "n/r", "n.r.", "–", "-", "/"
-    );
-
-    private boolean isPseudoMedecin(Medecin m) {
-        String nom    = m.getNom()    != null ? m.getNom().trim()    : "";
-        String prenom = m.getPrenom() != null ? m.getPrenom().trim() : "";
-        String full   = (prenom + " " + nom).trim().toLowerCase();
-        if (full.isBlank()) return true;
-        return NOMS_EXCLUS_TOP.stream().anyMatch(exclu -> full.contains(exclu));
-    }
-
-
     // Calcule le statut VACTIS selon les règles cibles (7 statuts, variation mixte 60/40, seuil 60j inactif, réactivation manuelle et neutralisation irrégulière)
     private String calculerStatutComplet(
             Medecin m,
@@ -315,10 +314,12 @@ public class ActivitePortefeuilleService {
             Map<String, Long> casMm2,
             Map<String, Long> casMm3,
             Set<Long> actif60Jours,
-            Set<Long> onboardingIds
+            Set<Long> onboardingIds,
+            YearMonth moisReference
     ) {
         String key  = buildMedKey(m);
         long caCurr = caM.getOrDefault(key, 0L);
+        m.setIsProfilIrregulier(false);
 
         // 1. Statut forcé manuellement "À réactiver"
         if (Boolean.TRUE.equals(m.getIsAReactiverManuel()) && caCurr == 0) {
@@ -332,7 +333,14 @@ public class ActivitePortefeuilleService {
 
         // 3. Aucun CA sur le mois M : seuil de 60 jours sans aucun dossier -> Inactif
         if (caCurr == 0) {
-            return actif60Jours.contains(m.getId()) ? "retention" : "inactif";
+            if (actif60Jours.contains(m.getId())) {
+                if (estProfilActiviteIrreguliere(m, "RETENTION", moisReference.atEndOfMonth())) {
+                    m.setIsProfilIrregulier(true);
+                    return "activite_irreguliere";
+                }
+                return "retention";
+            }
+            return "inactif";
         }
 
         // 4. Calcul de la Variation Mixte (60% CA + 40% volume de cas)
@@ -340,100 +348,39 @@ public class ActivitePortefeuilleService {
         double casReference = average(casMm1, casMm2, casMm3, key);
         double variationCa = ((caCurr - caReference) / Math.max(caReference, 300.0)) * 100.0;
         double variationCas = ((casM.getOrDefault(key, 0L) - casReference) / Math.max(casReference, 1.0)) * 100.0;
-        double variationMixte = (0.60 * variationCa) + (0.40 * variationCas);
+        double variationMixte = StatutMensuelPolicy.variationMixte(variationCa, variationCas);
 
-        String statutTheorique;
-        if (variationMixte > 20.0) {
-            statutTheorique = "progression";
-        } else if (variationMixte >= -10.0) {
-            statutTheorique = "actif_stable";
-        } else if (variationMixte >= -40.0) {
-            statutTheorique = "surveillance";
-        } else {
-            // Dans le nouveau référentiel à 7 statuts, toute chute sous -40% est en Rétention (le silence critique est un score transversal)
-            statutTheorique = "retention";
-        }
+        String statutTheorique = StatutMensuelPolicy.statutDepuisVariation(variationMixte).toLowerCase(Locale.ROOT);
 
         // 5. Section 4 — Activité Irrégulière (8 conditions cumulatives)
         // Neutralise un faux signal de Surveillance ou Rétention si le prescripteur a un profil irrégulier historique
         if (("surveillance".equals(statutTheorique) || "retention".equals(statutTheorique))
-                && verifier8ConditionsActiviteIrreguliere(m, caCurr, caMm1.getOrDefault(key, 0L), caMm2.getOrDefault(key, 0L), caMm3.getOrDefault(key, 0L), casM.getOrDefault(key, 0L), casReference)) {
+            && estProfilActiviteIrreguliere(m, statutTheorique, moisReference.atEndOfMonth())) {
             m.setIsProfilIrregulier(true);
-            return "actif_stable";
-        } else {
-            m.setIsProfilIrregulier(false);
+            return "activite_irreguliere";
         }
 
         return statutTheorique;
     }
 
-    /**
-     * Vérifie les 8 conditions cumulatives définissant un prescripteur à profil d'activité irrégulière (Section 4) :
-     * 1. Ancienneté de collaboration >= 6 mois
-     * 2. Activité constatée sur au moins 2 des 3 derniers mois de référence (M-1, M-2, M-3)
-     * 3. Variabilité historique constatée (écart entre mois min et mois max >= 30%)
-     * 4. Volume global historique significatif (au moins 5 cas au total)
-     * 5. Activité non nulle sur le mois courant (caCurr > 0)
-     * 6. Panier moyen préservé (ratio CA/cas >= 65% de la moyenne de référence)
-     * 7. Aucune réclamation active non résolue
-     * 8. Prescripteur actif du portefeuille
-     */
-    public boolean verifier8ConditionsActiviteIrreguliere(
-            Medecin m,
-            long caCurr,
-            long caMm1,
-            long caMm2,
-            long caMm3,
-            long casCurr,
-            double casRef
-    ) {
-        if (m == null) return false;
+    public boolean estProfilActiviteIrreguliere(Medecin medecin, String statutTheorique, LocalDate dateEvaluation) {
+        if (medecin == null || medecin.getId() == null) return false;
+        List<LocalDate> dates = extractionDonneesRepository.findDatesReceptionByMedecinId(medecin.getId());
+        if (dates == null || dates.isEmpty()) return false;
 
-        // Condition 1 : Ancienneté >= 6 mois
-        boolean ancienneteOk = m.getDatePremiereCollaboration() != null
-                && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(LocalDate.now());
-        if (!ancienneteOk && m.getCreatedAt() != null) {
-            ancienneteOk = !m.getCreatedAt().toLocalDate().plusMonths(6).isAfter(LocalDate.now());
-        }
-        if (!ancienneteOk) return false;
+        List<RetourTerrain> retours = retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin);
+        boolean absenceJustifieeEnCours = retours != null && retours.stream().anyMatch(retour -> {
+            if (retour.getQualification() != QualificationVisite.CONGE_ABSENCE
+                || retour.getDateDepart() == null || retour.getDateDepart().isAfter(dateEvaluation)) return false;
+            LocalDate dateRepriseOuRevue = retour.getDateRetourPrevue() != null
+                ? retour.getDateRetourPrevue() : retour.getDateRevue();
+            return dateRepriseOuRevue == null || !dateRepriseOuRevue.isBefore(dateEvaluation);
+        });
+        boolean repriseConfirmee = actionRepository.existsRetentionRecovery(
+                medecin.getId(), List.of(TypeEtapeRetention.ACTION_1, TypeEtapeRetention.ACTION_2), StatutPlanRetention.CLOTURE);
 
-        // Condition 2 : Au moins 2 mois actifs parmi M-1, M-2, M-3
-        int moisActifsRef = 0;
-        if (caMm1 > 0) moisActifsRef++;
-        if (caMm2 > 0) moisActifsRef++;
-        if (caMm3 > 0) moisActifsRef++;
-        if (moisActifsRef < 2) return false;
-
-        // Condition 3 : Variabilité historique (écart relatif max - min >= 30%)
-        long maxHist = Math.max(caMm1, Math.max(caMm2, caMm3));
-        long minHist = Math.min(caMm1, Math.min(caMm2, caMm3));
-        if (maxHist > 0 && ((double)(maxHist - minHist) / maxHist) < 0.30) {
-            return false;
-        }
-
-        // Condition 4 : Volume total de cas >= 5
-        if (m.getTotalCas() != null && m.getTotalCas() < 5) return false;
-
-        // Condition 5 : Activité non nulle sur le mois courant
-        if (caCurr <= 0) return false;
-
-        // Condition 6 : Panier moyen préservé (CA / cas)
-        if (casCurr > 0 && casRef > 0) {
-            double panierCurr = (double) caCurr / casCurr;
-            double caRefMoy = (caMm1 + caMm2 + caMm3) / 3.0;
-            double panierRef = caRefMoy / casRef;
-            if (panierRef > 0 && (panierCurr / panierRef) < 0.65) {
-                return false;
-            }
-        }
-
-        // Condition 7 : Absence de réclamation bloquante
-        if (m.getCommentaire() != null && m.getCommentaire().toLowerCase().contains("reclamation")) {
-            return false;
-        }
-
-        // Condition 8 : Prescripteur non inactif
-        return m.getStatut() == null || !"INACTIF".equalsIgnoreCase(m.getStatut());
+        return ActiviteIrregulierePolicy.estEligible(
+                medecin, statutTheorique, dates, dateEvaluation, absenceJustifieeEnCours, repriseConfirmee);
     }
 
     // Construit un MedecinStatutItem à partir d'un médecin et de ses valeurs M
@@ -468,7 +415,9 @@ public class ActivitePortefeuilleService {
 
         Map<Long, String> result = new LinkedHashMap<>();
         for (Medecin m : medecins) {
-            result.put(m.getId(), calculerStatutComplet(m, caM, caMm1, caMm2, caMm3, casM, casMm1, casMm2, casMm3, actif60Jours, onboarding));
+            if (medecinRepository.isPseudoMedecin(m)) continue;
+                result.put(m.getId(), calculerStatutComplet(
+                    m, caM, caMm1, caMm2, caMm3, casM, casMm1, casMm2, casMm3, actif60Jours, onboarding, ym));
         }
         return result;
     }
@@ -499,7 +448,7 @@ public class ActivitePortefeuilleService {
     // Retourne les IDs des médecins ayant eu au moins un dossier dans les 60 jours précédant la fin du mois ym
     private Set<Long> buildHistoriqueActif60Jours(YearMonth ym) {
         LocalDate end   = ym.atEndOfMonth();
-        LocalDate start = end.minusDays(60);
+        LocalDate start = end.minusDays(59);
         return new HashSet<>(extractionDonneesRepository.findMedecinIdsWithActivityInRange(start, end));
     }
 
@@ -507,12 +456,18 @@ public class ActivitePortefeuilleService {
     private Set<Long> buildOnboardingIds(YearMonth ym, List<Medecin> medecins) {
         LocalDate debut = ym.minusMonths(1).atDay(1);
         LocalDate fin   = ym.atEndOfMonth();
-        return medecins.stream()
-                .filter(m -> m.getDatePremiereCollaboration() != null
-                        && !m.getDatePremiereCollaboration().isBefore(debut)
-                        && !m.getDatePremiereCollaboration().isAfter(fin))
-                .map(Medecin::getId)
-                .collect(Collectors.toSet());
+        Set<Long> onboarding = new HashSet<>();
+        for (Medecin medecin : medecins) {
+            LocalDate premiereActivite = medecin.getDatePremiereCollaboration();
+            if (premiereActivite == null && medecin.getId() != null) {
+                premiereActivite = extractionDonneesRepository.findDatesReceptionByMedecinId(medecin.getId())
+                        .stream().min(LocalDate::compareTo).orElse(null);
+            }
+            if (StatutMensuelPolicy.onboardingRecentPourMois(premiereActivite, ym)) {
+                onboarding.add(medecin.getId());
+            }
+        }
+        return onboarding;
     }
 
     // Clé de lookup dans les maps CA/cas (ID du médecin en String)

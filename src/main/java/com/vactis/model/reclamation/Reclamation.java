@@ -33,6 +33,9 @@ public class Reclamation {
     @Column(name = "date_declaration", nullable = false)
     private LocalDate dateDeclaration = LocalDate.now();
 
+    @Column(name = "date_visite")
+    private LocalDate dateVisite;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private CategorieReclamation categorie = CategorieReclamation.AUTRE;
@@ -43,7 +46,7 @@ public class Reclamation {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private StatutReclamation statut = StatutReclamation.OUVERTE;
+    private StatutReclamation statut = StatutReclamation.A_TRAITER;
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String description;
@@ -56,6 +59,9 @@ public class Reclamation {
 
     @Column(name = "date_resolution")
     private LocalDate dateResolution;
+
+    @Column(name = "prochaine_instruction", columnDefinition = "TEXT")
+    private String prochaineInstruction;
 
     @Column(name = "retour_terrain_id")
     private Long retourTerrainId;
