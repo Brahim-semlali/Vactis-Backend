@@ -71,6 +71,13 @@ public class SecurityConfig {
                             "/api/admin/excel/**"
                         ).hasAnyAuthority("ROLE_ADMIN", "MENU:/import-export-excel")
                         .requestMatchers(
+                            "/api/dashboard-direction",
+                            "/api/dashboard-direction/**"
+                        ).hasAnyAuthority("ROLE_ADMIN", "MENU:/dashboard-direction")
+                        .requestMatchers(
+                            "/api/suivi-equipe/**"
+                        ).hasAnyAuthority("ROLE_ADMIN", "MENU:/suivi-equipe")
+                        .requestMatchers(
                             "/api/admin/**"
                         ).hasAnyAuthority("ROLE_ADMIN", "MENU:/users", "MENU:/roles")
                         .requestMatchers(
@@ -82,8 +89,7 @@ public class SecurityConfig {
                         .requestMatchers(
                             "/api/menu/AddMenu",
                             "/api/menu/Delete/**",
-                            "/api/menu/Update/**",
-                            "/api/medecins/sync"
+                            "/api/menu/Update/**"
                         ).hasRole("ADMIN")
                         .requestMatchers(
                             HttpMethod.GET,

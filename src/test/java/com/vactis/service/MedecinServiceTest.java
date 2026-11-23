@@ -28,7 +28,6 @@ class MedecinServiceTest {
 
     @Mock private MedecinRepository medecinRepository;
     @Mock private ActionService actionService;
-    @Mock private ExcelImportService excelImportService;
     @Mock private ControleService controleService;
     @Mock private SegmentationService segmentationService;
     @Mock private ExtractionDonneesRepository extractionDonneesRepository;

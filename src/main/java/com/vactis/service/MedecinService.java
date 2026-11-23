@@ -39,16 +39,10 @@ import java.util.Map;
 public class MedecinService {
     private final MedecinRepository medecinRepository;
     private final ActionService actionService;
-    private final ExcelImportService excelImportService;
     private final ControleService controleService;
     private final SegmentationService segmentationService;
     private final ActivitePortefeuilleService activitePortefeuilleService;
     private final ExtractionDonneesRepository extractionDonneesRepository;
-
-    // Déclenche la synchronisation des médecins depuis le fichier Excel fictif
-    public void syncMedecinsFromDataFictif() {
-        excelImportService.importFictifExcelAndSyncMedecins();
-    }
 
     // Retourne tous les médecins du portefeuille
     public List<Medecin> findAll(){

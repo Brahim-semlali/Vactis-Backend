@@ -22,12 +22,8 @@ import com.vactis.service.Activite.SegmentationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.io.InputStream;
 import java.time.LocalDate;
@@ -49,28 +45,6 @@ public class ExcelImportService {
     private final ReclamationHistoriqueRepository reclamationHistoriqueRepository;
     private final ReclamationRepository reclamationRepository;
     private final NotificationRepository notificationRepository;
-    private final ResourceLoader resourceLoader;
-
-    @Transactional
-    public void importFictifExcelAndSyncMedecins() {
-        try {
-            Resource resource = resourceLoader.getResource("classpath:data/data_fictif_test_vactis.xlsx");
-            if (!resource.exists()) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Classeur de données fictives introuvable.");
-            }
-            try (InputStream inputStream = resource.getInputStream()) {
-                importFromExcelStream(inputStream);
-            }
-        } catch (Exception e) {
-            log.error("Erreur lors de l'import et de la synchronisation depuis l'Excel fictif: {}", e.getMessage(), e);
-            if (e instanceof ResponseStatusException responseStatusException) {
-                throw responseStatusException;
-            }
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Échec de la synchronisation du classeur fictif.", e);
-        }
-    }
 
     @Transactional
     public void importFromExcelStream(InputStream inputStream) throws Exception {

@@ -1,227 +1,137 @@
-# 🏥 Vactis Backend
+# VACTIS — Backend
 
-> API REST Spring Boot pour la gestion de la relation médecin — Laboratoire VACTIS
+API REST de VACTIS, l'outil de pilotage de la relation médecin du laboratoire : import des extractions Excel, calcul mensuel des statuts, segments et scores de chaque médecin, puis génération des actions commerciales, alertes et recommandations.
 
-[![CI Backend](https://github.com/YOUR_ORG/Vactis-Backend/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/YOUR_ORG/Vactis-Backend/actions/workflows/backend-ci.yml)
-![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-green?logo=springboot)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
-![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)
+| Composant | Technologie |
+|---|---|
+| Langage | Java 17 |
+| Framework | Spring Boot 3.4.2 (Web, Data JPA, Security, Validation, Actuator) |
+| Sécurité | JWT sans état (jjwt 0.11.5), mots de passe BCrypt |
+| Base de données | PostgreSQL 16 (H2 en mémoire pour les tests) |
+| Import Excel | Apache POI 5.2.5 |
+| Build | Maven (`./mvnw`) |
+| Déploiement | Docker + Docker Compose |
 
----
-
-## 📋 Description
-
-**Vactis Backend** est l'API REST du système de pilotage de la relation médecin développé pour le laboratoire **VACTIS**. Il expose les endpoints nécessaires à la gestion des médecins, des actions commerciales, du suivi des dossiers patients et du contrôle des règles métier (statuts, segments CA).
-
-### Fonctionnalités principales
-
-- 🔐 **Authentification JWT** — Login sécurisé avec blocage de compte après tentatives échouées
-- 👨‍⚕️ **Gestion des médecins** — CRUD complet avec statut, segment CA, pilotage et risque urgence
-- 📊 **Actions commerciales** — Suivi des visites, relances et états planifiés/réalisés
-- 📁 **Import Excel** — Synchronisation automatique depuis `data_fictif_test_vactis.xlsx`
-- ⚙️ **Règles de contrôle dynamiques** — Paramétrage des seuils CA par type (STATUT / SEGMENT)
-- 🔧 **Paramètres système** — Durée globale des tokens JWT et désactivation automatique des comptes inactifs
-- 🩺 **Actuator Health** — Endpoint `/actuator/health` pour la supervision
-- 📖 **Swagger UI** — Documentation API interactive disponible à `/swagger-ui.html`
+La documentation technique détaillée (architecture, moteur métier, référence de l'API) est fournie à part : `VACTIS_Documentation_Backend.pdf`.
 
 ---
 
-## 🛠️ Stack technique
+## Organisation du dépôt GitLab
 
-| Composant       | Technologie                 |
-|-----------------|-----------------------------|
-| Langage         | Java 17                     |
-| Framework       | Spring Boot 4.0.6           |
-| Sécurité        | Spring Security + JWT (JJWT 0.11.5) |
-| Persistance     | Spring Data JPA + Hibernate |
-| Base de données | PostgreSQL 16               |
-| Import Excel    | Apache POI 5.2.5            |
-| Build           | Maven (mvnw)                |
-| Conteneurisation| Docker + Docker Compose     |
-| CI/CD           | GitHub Actions              |
-| Documentation   | SpringDoc OpenAPI (Swagger) |
+Le code est livré **par module**, une branche `feature/<module>` par module. Chaque branche ne contient que les fichiers de son module : le projet complet s'obtient en fusionnant toutes les branches dans `main` (les fusions ne présentent aucun conflit).
 
-### Sécurité des sessions
-
-L'application est stateless (`SessionCreationPolicy.STATELESS`) et utilise des tokens JWT, pas des sessions HTTP. La durée du token est lue dans `system_settings.duree_session_minutes` au moment de chaque génération et vérifiée à chaque requête; la propriété `jwt.expiration` ne sert que de compatibilité aux tests isolés. Réduire la durée invalide donc les tokens déjà émis dès qu'ils dépassent la nouvelle limite.
-
-Le champ `users.last_login_at` est renseigné après chaque connexion réussie. Une tâche Spring exécutée chaque jour à 02:00 désactive les comptes actifs dont cette date dépasse `duree_inactivite_jours`. La table `system_settings` est créée par Hibernate (`ddl-auto=update`) ou par `src/main/resources/system_settings_migration.sql` lors d'une migration manuelle.
-
----
-
-## 🚀 Démarrage rapide
-
-### Prérequis
-
-- Java 17+
-- Maven 3.9+ (ou utiliser `./mvnw`)
-- PostgreSQL 16 (ou Docker)
-- Docker & Docker Compose (recommandé)
+| Branche | Contenu |
+|---|---|
+| `feature/base` | Configuration Maven, Docker, application principale, gestion des erreurs, README |
+| `feature/database` | Script complet de la base (`database/vactis_schema.sql`) et migrations |
+| `feature/auth` | Authentification JWT, sécurité, utilisateurs et rôles |
+| `feature/menu` | Menus et sous-menus dynamiques, droits par rôle |
+| `feature/system` | Paramètres système, journal de connexion, localisation du laboratoire, données initiales |
+| `feature/data-excel` | Import / export des extractions Excel |
+| `feature/activite` | Moteur VACTIS : statuts mensuels, scores, segmentation, impact, portefeuille |
+| `feature/medecin` | Médecins, fiche contextuelle, retours terrain |
+| `feature/action` | Actions commerciales et plan de rétention |
+| `feature/alerte` | Alertes hebdomadaires et alerte de silence |
+| `feature/recommandation` | Recommandations et moteur de commentaires |
+| `feature/reclamation` | Réclamations et historique |
+| `feature/bridge-to-goal` | Bridge to Goal et objectifs mensuels |
+| `feature/controle` | Contrôle du chiffre d'affaires |
+| `feature/concurrence` | Agences concurrentes (zone intelligence) |
+| `feature/dashboard-direction` | Tableau de bord direction |
+| `feature/suivi-equipe` | Suivi de l'équipe commerciale |
+| `feature/notification` | Notifications |
 
 ---
 
-### ▶️ Avec Docker Compose (recommandé)
+## Démarrage
+
+### Avec Docker (recommandé)
 
 ```bash
-# 1. Cloner le dépôt
-git clone https://github.com/YOUR_ORG/Vactis-Backend.git
-cd Vactis-Backend
-
-# 2. Configurer les variables d'environnement
-cp .env.example .env
-# Modifier .env avec vos valeurs
-
-# 3. Lancer PostgreSQL + Backend
-docker compose up --build -d
-
-# 4. Vérifier que l'API est disponible
+cp .env.example .env          # puis renseigner les valeurs
+docker compose up --build -d  # PostgreSQL + backend
 curl http://localhost:8083/actuator/health
 ```
 
-L'API sera disponible sur : **`http://localhost:8083`**
+Au premier démarrage (volume vide), PostgreSQL exécute `database/vactis_schema.sql` pour créer le schéma. L'API répond sur `http://localhost:8083`.
 
----
+### En local
 
-### ▶️ En local (sans Docker)
+PostgreSQL doit tourner avec une base `vactis_db` créée à partir de `database/vactis_schema.sql`.
 
 ```bash
-# 1. S'assurer que PostgreSQL tourne sur localhost:5432
-#    avec une base vactis_db créée
-
-# 2. Définir les variables d'environnement
 export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/vactis_db
 export SPRING_DATASOURCE_USERNAME=postgres
-export SPRING_DATASOURCE_PASSWORD=votre_mdp
-export JWT_SECRET=votre_secret_jwt
-
-# 3. Lancer l'application
+export SPRING_DATASOURCE_PASSWORD=...
+export JWT_SECRET=...              # clé Base64 d'au moins 256 bits : openssl rand -base64 32
+export VACTIS_ADMIN_PASSWORD=...
 ./mvnw spring-boot:run
 ```
 
-L'API sera disponible sur : **`http://localhost:8082`**
+L'API répond sur `http://localhost:8082`.
+
+### Variables d'environnement
+
+| Variable | Rôle | Obligatoire |
+|---|---|---|
+| `SPRING_DATASOURCE_URL` / `_USERNAME` / `_PASSWORD` | Connexion PostgreSQL | oui (hors Docker) |
+| `JWT_SECRET` | Clé de signature des jetons JWT, encodée en Base64 (256 bits minimum) | oui |
+| `VACTIS_ADMIN_PASSWORD` | Mot de passe du compte `admin` créé au premier démarrage | oui |
+| `JWT_EXPIRATION` | Durée par défaut d'un jeton (ms) ; la durée effective est réglée dans les paramètres système | non (24 h) |
+| `CORS_ALLOWED_ORIGINS` | Origines autorisées pour le frontend | non |
+| `POSTGRES_*`, `BACKEND_PORT` | Base et port exposés par Docker Compose | non |
+
+Le fichier `.env` ne doit jamais être commité.
+
+### Premier accès
+
+Au premier démarrage, l'application crée le compte **`admin`** avec le mot de passe défini dans `VACTIS_ADMIN_PASSWORD`, ainsi que les rôles, menus et paramètres par défaut. La base démarre sans données métier : l'administrateur importe le classeur Excel depuis la page *Import / Export Excel* du frontend.
 
 ---
 
-## ⚙️ Variables d'environnement
+## Architecture
 
-Copier `.env.example` vers `.env` et renseigner les valeurs :
+```
+src/main/java/com/vactis/
+├── config/       Sécurité (SecurityConfig, JwtAuthFilter), initialisation des données
+├── controller/   21 contrôleurs REST
+├── service/      Logique métier ; les règles VACTIS sont isolées dans des classes *Policy
+├── repository/   Accès aux données (Spring Data JPA)
+├── model/        Entités JPA
+├── dto/          Objets de requête et de réponse
+└── exception/    Gestion centralisée des erreurs (GlobalExceptionHandler)
+```
 
-| Variable                    | Description                              | Défaut                        |
-|-----------------------------|------------------------------------------|-------------------------------|
-| `SPRING_DATASOURCE_URL`     | URL JDBC de connexion PostgreSQL         | `jdbc:postgresql://localhost:5432/vactis_db` |
-| `SPRING_DATASOURCE_USERNAME`| Utilisateur PostgreSQL                   | `postgres`                    |
-| `SPRING_DATASOURCE_PASSWORD`| Mot de passe PostgreSQL                  | *(vide)*                      |
-| `JWT_SECRET`                | Clé secrète pour signer les tokens JWT   | *(valeur de dev uniquement)*  |
-| `JWT_EXPIRATION`            | Durée de validité du token en ms         | `86400000` (24h)              |
-| `CORS_ALLOWED_ORIGINS`      | Origines autorisées pour CORS            | `http://localhost:5173`       |
-| `POSTGRES_PORT`             | Port exposé de PostgreSQL (Docker)       | `5432`                        |
-| `BACKEND_PORT`              | Port exposé du backend (Docker)          | `8083`                        |
+Chemin d'une requête : `JwtAuthFilter` (vérifie le jeton) → `SecurityConfig` (droits par rôle et par menu) → contrôleur → service / policy → repository → PostgreSQL.
 
-> ⚠️ **Ne jamais committer le fichier `.env`** — il est dans `.gitignore`.
+### Principales routes
 
----
+| Préfixe | Domaine |
+|---|---|
+| `/api/auth` | Connexion, inscription, profil, mot de passe |
+| `/api/medecins` | Médecins, fiche contextuelle, retours terrain |
+| `/api/activite` | Lecture d'activité, statuts, segmentation, impact |
+| `/api/actions` | Actions commerciales |
+| `/api/alertes`, `/api/notifications` | Alertes hebdomadaires, notifications |
+| `/api/recommandations`, `/api/reclamations` | Recommandations, réclamations |
+| `/api/bridge-to-goal`, `/api/controle` | Objectifs, contrôle du CA |
+| `/api/dashboard-direction`, `/api/suivi-equipe` | Pilotage direction et équipe |
+| `/api/agences-concurrentes`, `/api/zone-intelligence` | Zone intelligence |
+| `/api/menu`, `/api/admin/**`, `/users`, `/roles` | Menus, administration, utilisateurs, rôles |
+| `/actuator/health` | État de santé (public) |
 
-## 📡 Endpoints API principaux
-
-| Méthode | Endpoint                        | Description                          | Auth requise |
-|---------|---------------------------------|--------------------------------------|:---:|
-| POST    | `/api/auth/login`               | Connexion, retourne un token JWT     | ❌  |
-| POST    | `/api/auth/register`            | Créer un compte utilisateur          | ❌  |
-| GET     | `/api/medecins`                 | Lister tous les médecins             | ✅  |
-| POST    | `/api/medecins`                 | Créer un médecin                     | ✅  |
-| PUT     | `/api/medecins/{id}`            | Modifier un médecin                  | ✅  |
-| DELETE  | `/api/medecins/{id}`            | Supprimer un médecin                 | ✅  |
-| POST    | `/api/medecins/sync-excel`      | Synchroniser depuis le fichier Excel | ✅  |
-| GET     | `/api/actions`                  | Lister les actions commerciales      | ✅  |
-| GET     | `/api/controles`                | Lister les règles de contrôle        | ✅  |
-| POST    | `/api/controles`                | Créer une règle de contrôle          | ✅  |
-| GET     | `/actuator/health`              | Status de santé de l'application     | ❌  |
-
-📖 **Documentation complète** : [`http://localhost:8082/swagger-ui.html`](http://localhost:8082/swagger-ui.html)
+Toutes les routes, sauf la connexion, l'inscription et `/actuator/health`, exigent un jeton JWT.
 
 ---
 
-## 🧪 Tests
+## Tests
 
 ```bash
-# Lancer les tests unitaires et d'intégration
 ./mvnw test
-
-# Ou avec rapport complet
-./mvnw clean verify
 ```
 
-> Les tests d'intégration nécessitent une base PostgreSQL accessible. Voir le workflow CI pour la configuration avec un conteneur PostgreSQL.
+215 tests (JUnit 5, Mockito, Spring Boot Test) sur une base H2 en mémoire : aucune base PostgreSQL n'est nécessaire. La CI (`.github/workflows/backend-ci.yml`) exécute `./mvnw clean verify` puis construit l'image Docker.
 
 ---
 
-## 🐳 Docker
-
-```bash
-# Construire l'image Docker
-docker build -t vactis-backend:latest .
-
-# Lancer l'image seule (PostgreSQL déjà disponible)
-docker run -p 8082:8082 \
-  -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/vactis_db \
-  -e SPRING_DATASOURCE_PASSWORD=votre_mdp \
-  -e JWT_SECRET=votre_secret \
-  vactis-backend:latest
-```
-
----
-
-## ⚡ CI/CD — GitHub Actions
-
-Le pipeline CI (`.github/workflows/backend-ci.yml`) s'exécute automatiquement sur chaque **push** et **pull request** vers `main` :
-
-1. ✅ Démarrage d'un conteneur **PostgreSQL 15** de test
-2. ✅ Installation **JDK 17** (Temurin) avec cache Maven
-3. ✅ **Build & Tests** — `./mvnw clean verify`
-4. ✅ **Build Docker Image** — Vérifie que l'image se construit correctement
-
----
-
-## 🗂️ Structure du projet
-
-```
-src/
-├── main/
-│   ├── java/com/vactis/
-│   │   ├── config/          # Sécurité, JWT, CORS, seeding
-│   │   ├── controller/      # AuthController, MedecinController, ActionController, ControleController
-│   │   ├── dto/             # DTOs requêtes/réponses
-│   │   ├── exception/       # GlobalExceptionHandler
-│   │   ├── model/           # Entités JPA (Medecin, Action, Controle, User...)
-│   │   ├── repository/      # Spring Data JPA repositories
-│   │   └── service/         # Logique métier + ExcelImportService
-│   └── resources/
-│       ├── application.properties
-│       ├── data.sql          # Données initiales (admin, paramètres)
-│       └── data/             # Fichier Excel fictif pour les tests
-└── test/
-    └── java/com/vactis/      # Tests Spring Boot
-```
-
----
-
-## 👤 Identifiants de démonstration
-
-| Champ      | Valeur          |
-|------------|-----------------|
-| Username   | `admin`         |
-| Password   | `password`      |
-| Rôle       | `ADMIN`         |
-
----
-
-## 👥 Auteurs
-
-Développé dans le cadre d'un stage au laboratoire **VACTIS** — Marrakech.
-
----
-
-## 📄 Licence
-
-Usage interne — © VACTIS. Tous droits réservés.
+Développé dans le cadre d'un stage au laboratoire VACTIS. Usage interne.

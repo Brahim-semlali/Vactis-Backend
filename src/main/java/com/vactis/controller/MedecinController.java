@@ -72,12 +72,6 @@ public class MedecinController {
         return ResponseEntity.ok(medecinService.getEvolutionByMedecin(id));
     }
 
-    // Synchronise les médecins depuis le fichier Excel des données fictives
-    @PostMapping("/sync")
-    public void syncFromDataFictif(){
-        medecinService.syncMedecinsFromDataFictif();
-    }
-
     // Met à jour la note de potentiel commercial saisie manuellement (1-5 ou null)
     @PatchMapping("/{id}/note-input")
     public ResponseEntity<Medecin> updateNoteInput(

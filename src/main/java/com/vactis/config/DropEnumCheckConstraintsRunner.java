@@ -54,6 +54,20 @@ public class DropEnumCheckConstraintsRunner {
         // Table reclamations
         "ALTER TABLE reclamations DROP CONSTRAINT IF EXISTS reclamations_statut_check",
         "ALTER TABLE reclamations DROP CONSTRAINT IF EXISTS reclamations_type_check",
+        // Contraintes figées des anciennes bases : elles refusent des valeurs d'enum ajoutées depuis
+        // (ex. obstacle_principal = DELAI, QUALITE, RELATION, ORGANISATION_LOGISTIQUE, REFUS_EXPLICITE).
+        "ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_obstacle_principal_check",
+        "ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_statut_plan_retention_check",
+        "ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_type_etape_retention_check",
+        "ALTER TABLE alertes_hebdomadaires DROP CONSTRAINT IF EXISTS alertes_hebdomadaires_statut_alerte_check",
+        "ALTER TABLE alertes_hebdomadaires DROP CONSTRAINT IF EXISTS alertes_hebdomadaires_type_alerte_check",
+        "ALTER TABLE data_fictif DROP CONSTRAINT IF EXISTS data_fictif_statut_dossier_check",
+        "ALTER TABLE reclamations DROP CONSTRAINT IF EXISTS reclamations_categorie_check",
+        "ALTER TABLE reclamations DROP CONSTRAINT IF EXISTS reclamations_priorite_check",
+        "ALTER TABLE retours_terrain DROP CONSTRAINT IF EXISTS retours_terrain_obstacle_principal_check",
+        "ALTER TABLE retours_terrain DROP CONSTRAINT IF EXISTS retours_terrain_qualification_check",
+        "ALTER TABLE retours_terrain DROP CONSTRAINT IF EXISTS retours_terrain_statut_visite_check",
+        "ALTER TABLE retours_terrain DROP CONSTRAINT IF EXISTS retours_terrain_type_visite_check",
         // Les dossiers de l'Excel peuvent ne pas avoir de médecin affecté.
         "ALTER TABLE data_fictif ALTER COLUMN medecin_id DROP NOT NULL",
         // La note terrain est facultative; anciennes bases peuvent encore l'imposer.

@@ -11,6 +11,8 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Création du schéma au premier démarrage (volume vide), requis par ddl-auto=validate
+      - ./database/vactis_schema.sql:/docker-entrypoint-initdb.d/01_vactis_schema.sql:ro
     networks:
       - stagelabo-network
     healthcheck:

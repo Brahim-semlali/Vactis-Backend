@@ -83,8 +83,14 @@ public class ReclamationController {
         String dateStr = body.get("dateTraitement") != null ? body.get("dateTraitement") : body.get("dateResolution");
         java.time.LocalDate dateTraitement = (dateStr != null && !dateStr.isBlank()) ? java.time.LocalDate.parse(dateStr.trim()) : null;
         String auteur = authentication == null ? "Direction" : authentication.getName();
-        return ResponseEntity.ok(reclamationService.mettreAJourStatut(
-            id, statut, solution, responsable, prochaineInstruction, dateTraitement, auteur));
+        Reclamation updated = reclamationService.mettreAJourStatut(
+            id, statut, solution, responsable, prochaineInstruction, dateTraitement, auteur);
+        if (body.containsKey("dateEcheance")) {
+            String echeance = body.get("dateEcheance");
+            updated = reclamationService.definirEcheance(id,
+                (echeance == null || echeance.isBlank()) ? null : java.time.LocalDate.parse(echeance.trim()));
+        }
+        return ResponseEntity.ok(updated);
     }
 
     private boolean isDirectionOuAdmin(Authentication authentication) {

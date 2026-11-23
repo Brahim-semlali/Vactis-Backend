@@ -36,4 +36,7 @@ public class ReclamationRequest {
     private String prochaineInstruction;
 
     private Long retourTerrainId;
+
+    // Échéance de traitement (facultative)
+    private LocalDate dateEcheance;
 }

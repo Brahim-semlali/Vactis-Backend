@@ -70,6 +70,7 @@ public class ReclamationService {
         r.setProchaineInstruction(request.getProchaineInstruction() != null
             ? request.getProchaineInstruction() : "Attendre le traitement par la direction.");
         r.setRetourTerrainId(request.getRetourTerrainId());
+        r.setDateEcheance(request.getDateEcheance());
 
         log.info("Création d'un ticket réclamation pour le Dr {} par {}", m.getNom(), r.getCommercialDeclarant());
         Reclamation saved = reclamationRepository.save(r);
@@ -148,6 +149,14 @@ public class ReclamationService {
         entree.setCommentaire(commentaire);
         entree.setAuteur(auteur == null || auteur.isBlank() ? "Système" : auteur);
         historiqueRepository.save(entree);
+    }
+
+    // Fixe (ou retire, si null) l'échéance de traitement d'une réclamation
+    @Transactional
+    public Reclamation definirEcheance(Long id, LocalDate dateEcheance) {
+        Reclamation r = getById(id);
+        r.setDateEcheance(dateEcheance);
+        return reclamationRepository.save(r);
     }
 
     public long countOuvertes() {

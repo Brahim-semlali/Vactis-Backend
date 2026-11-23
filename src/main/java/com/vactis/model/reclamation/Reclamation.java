@@ -60,6 +60,10 @@ public class Reclamation {
     @Column(name = "date_resolution")
     private LocalDate dateResolution;
 
+    // Date limite de traitement fixée par la direction (suivi des réclamations en retard)
+    @Column(name = "date_echeance")
+    private LocalDate dateEcheance;
+
     @Column(name = "prochaine_instruction", columnDefinition = "TEXT")
     private String prochaineInstruction;
 

@@ -212,6 +212,9 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
 
     List<ExtractionDonnees> findByDateReceptionBetweenOrderByDateReceptionDesc(java.time.LocalDate start, java.time.LocalDate end);
 
+    // Historique complet des dossiers d'un médecin (chronologie d'activité du Suivi équipe)
+    List<ExtractionDonnees> findByMedecinIdOrderByDateReceptionAsc(Long medecinId);
+
     // -------------------------------------------------------------------------
     // Requêtes Niveau 2 — Dynamique portefeuille médecins
     // -------------------------------------------------------------------------

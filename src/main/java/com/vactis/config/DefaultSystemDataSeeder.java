@@ -156,6 +156,7 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
         ensureMenuItem("Importation et exportation Excel", "file-spreadsheet", "/import-export-excel", 18, "Administration");
         ensureMenuItem("Paramètres système", "settings", "/parametres-systeme", 19, "Administration");
         ensureMenuItem("Réclamations", "alert-circle", "/reclamations", 20, "Terrain & Actions");
+        ensureMenuItem("Suivi équipe", "activity", "/suivi-equipe", 21, "Pilotage");
 
         menuItemRepository.findAll().stream()
                 .filter(menu -> "Exports analytiques".equalsIgnoreCase(menu.getLabel()))
