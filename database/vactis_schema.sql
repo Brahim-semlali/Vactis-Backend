@@ -248,6 +248,7 @@ CREATE TABLE retours_terrain (
     date_visite            date NOT NULL,
     note                   double precision,
     visiteur               varchar(255),
+    commercial_appui       varchar(255),
     medecin_id             bigint NOT NULL REFERENCES medecins (id),
     nom_medecin            varchar(255),
     qualification          varchar(20) DEFAULT 'NON_RENSEIGNE' NOT NULL,

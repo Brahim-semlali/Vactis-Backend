@@ -48,20 +48,6 @@ public class ActiviteImpactService {
 
     private static final DateTimeFormatter YYYY_MM = DateTimeFormatter.ofPattern("yyyy-MM");
 
-    /**
-     * Table de rangs VACTIS — identique à celle du Niveau 2.
-     * Rang 1 = meilleur état, rang 8 = état le plus dégradé.
-     */
-    private static final Map<String, Integer> RANG_STATUT = Map.of(
-            "progression",      1,
-            "actif_stable",     2,
-            "surveillance",     3,
-            "retention",        4,
-            "silence_critique", 5,
-            "onboarding",       6,
-            "a_reactiver",      7,
-            "exclu",            8
-    );
 
     // ──────────────────────────────────────────────────────────────────────────
     // Bloc 1 — Rapport d'impact
@@ -405,17 +391,11 @@ public class ActiviteImpactService {
                                      Map<Long, String> statutsM1,
                                      Set<Long> medecinsAvecDonneesM1,
                                      boolean apresCalculable) {
-        if (!apresCalculable || !medecinsAvecDonneesM1.contains(medecinId)) return "NON_OBSERVABLE";
-
-        String sAvant = statutsM.getOrDefault(medecinId, "exclu");
-        String sApres = statutsM1.getOrDefault(medecinId, "exclu");
-
-        int rangAvant = RANG_STATUT.getOrDefault(sAvant, 8);
-        int rangApres = RANG_STATUT.getOrDefault(sApres, 8);
-
-        if (rangApres < rangAvant) return "FAVORABLE";
-        if (rangApres == rangAvant) return "STABLE";
-        return "DEFAVORABLE";
+        boolean observable = apresCalculable && medecinsAvecDonneesM1.contains(medecinId);
+        return EvolutionStatutPolicy.evolution(
+                statutsM.getOrDefault(medecinId, EvolutionStatutPolicy.STATUT_PAR_DEFAUT),
+                statutsM1.getOrDefault(medecinId, EvolutionStatutPolicy.STATUT_PAR_DEFAUT),
+                observable);
     }
 
     /**

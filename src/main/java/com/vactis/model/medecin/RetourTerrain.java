@@ -47,6 +47,10 @@ public class RetourTerrain {
     @Column(length = 255)
     private String visiteur;
 
+    /** Commercial venu en appui du visiteur principal (optionnel). */
+    @Column(name = "commercial_appui", length = 255)
+    private String commercialAppui;
+
     // --- Niveau 3 : champs d'exécution terrain ---
 
     /** Statut d'exécution de la visite (REALISEE par défaut pour la migration des données existantes). */

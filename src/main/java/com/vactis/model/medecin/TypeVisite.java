@@ -11,5 +11,7 @@ public enum TypeVisite {
     DIAGNOSTIC,
     RECONNAISSANCE,
     URGENCE_SILENCE,
+    /** Passage de service ou logistique hors VACTIS : exclu des échanges commerciaux. */
+    SERVICE,
     AUTRE
 }

@@ -6,6 +6,9 @@ import com.vactis.model.action.StatutPlanRetention;
 import com.vactis.model.action.TypeEtapeRetention;
 import com.vactis.model.action.UrgenceAction;
 import com.vactis.dto.action.SaisieRetourTerrainRequest;
+import com.vactis.dto.action.SaisieVisiteLibreRequest;
+import com.vactis.model.medecin.QualificationVisite;
+import com.vactis.model.medecin.TypeVisite;
 import com.vactis.dto.reclamation.ReclamationRequest;
 import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RetourTerrain;
@@ -25,6 +28,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -298,5 +302,34 @@ class ActionServiceTest {
         assertEquals(8L, claimRequest.getValue().getRetourTerrainId());
         assertEquals(91L, savedAction.getReclamationId());
         verify(retourTerrainRepository).save(org.mockito.ArgumentMatchers.argThat(retour -> retour.getNote() == null));
+    }
+
+    @Test
+    void passageDeServiceHorsVactisNestPasQualifieEtGardeSonAppui() {
+        Medecin medecin = new Medecin();
+        medecin.setId(5L);
+        when(medecinRepository.findById(5L)).thenReturn(Optional.of(medecin));
+        when(retourTerrainRepository.save(any(RetourTerrain.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        SaisieVisiteLibreRequest request = new SaisieVisiteLibreRequest();
+        request.setMedecinId(5L);
+        request.setDateVisite(LocalDate.now());
+        request.setTypePassage("service");
+        request.setQualification("FAVORABLE");
+        request.setCommercialAppui("  Commercial 2 ");
+
+        RetourTerrain retour = actionService.creerVisiteLibre(request, "Commercial 1");
+
+        assertEquals(TypeVisite.SERVICE, retour.getTypeVisite());
+        assertEquals(QualificationVisite.NON_RENSEIGNE, retour.getQualification());
+        assertEquals("Commercial 2", retour.getCommercialAppui());
+    }
+
+    @Test
+    void typeDePassageInconnuEstRefuseEtAppuiIdentiqueAuVisiteurEstIgnore() {
+        assertThrows(IllegalArgumentException.class, () -> ActionService.estPassageService("LIVRAISON"));
+        assertEquals(false, ActionService.estPassageService(null));
+        assertNull(ActionService.commercialAppui("commercial 1", "Commercial 1"));
+        assertNull(ActionService.commercialAppui("  ", "Commercial 1"));
     }
 }

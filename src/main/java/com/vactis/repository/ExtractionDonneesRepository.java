@@ -268,6 +268,14 @@ public interface ExtractionDonneesRepository extends JpaRepository<ExtractionDon
             @Param("endDate") java.time.LocalDate endDate
     );
 
+    /** IDs des médecins ayant au moins un dossier dans l'extraction : les autres sont des prospects. */
+    @Query("""
+        select distinct e.medecin.id
+        from ExtractionDonnees e
+        where e.medecin is not null
+    """)
+    List<Long> findDistinctMedecinIdsWithActivity();
+
     /**
      * Retourne la date de réception du dernier dossier médical (patient) envoyé au labo par le médecin.
      */

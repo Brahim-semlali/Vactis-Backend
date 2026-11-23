@@ -33,6 +33,7 @@ import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.QualificationVisite;
 import com.vactis.model.medecin.RetourTerrain;
 import com.vactis.model.medecin.StatutVisite;
+import com.vactis.model.medecin.TypeVisite;
 import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.RetourTerrainRepository;
 import com.vactis.repository.ExtractionDonneesRepository;
@@ -485,6 +486,7 @@ public class ActionService {
             rt.setProchaineAction(request.getProchaineAction());
             rt.setDateProchaineAction(request.getDateProchaineAction());
             rt.setVisiteur(username != null ? username : action.getCommercial());
+            rt.setCommercialAppui(commercialAppui(request.getCommercialAppui(), rt.getVisiteur()));
             rt.setNote(request.getNoteTerrain());
             rt.setQualification(parseQualification(request.getQualification()));
             rt.setDateDepart(request.getDateDepart());
@@ -510,6 +512,9 @@ public class ActionService {
     // Enregistre une visite commerciale libre (hors VACTIS)
     @Transactional
     public RetourTerrain creerVisiteLibre(SaisieVisiteLibreRequest request, String username) {
+        boolean service = estPassageService(request.getTypePassage());
+        // Un passage de service n'est pas un échange commercial : il n'est pas qualifié
+        if (service) request.setQualification(QualificationVisite.NON_RENSEIGNE.name());
         validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), null, request.getDateDepart(), request.getDateRetourPrevue(), request.getDateRevue());
         Medecin medecin = null;
         if (request.getMedecinId() != null) {
@@ -540,6 +545,8 @@ public class ActionService {
         rt.setProchaineAction(request.getProchaineAction());
         rt.setDateProchaineAction(request.getDateProchaineAction());
         rt.setVisiteur(username != null ? username : "Commercial");
+        rt.setCommercialAppui(commercialAppui(request.getCommercialAppui(), rt.getVisiteur()));
+        if (service) rt.setTypeVisite(TypeVisite.SERVICE);
         rt.setNote(request.getNoteTerrain());
         rt.setQualification(parseQualification(request.getQualification()));
             rt.setDateDepart(request.getDateDepart());
@@ -624,6 +631,20 @@ public class ActionService {
             throw new IllegalArgumentException("La date de la prochaine action doit suivre la date de visite.");
         }
         parseQualification(qualification);
+    }
+
+    static boolean estPassageService(String typePassage) {
+        if (typePassage == null || typePassage.isBlank() || "COMMERCIAL".equalsIgnoreCase(typePassage.trim())) return false;
+        if ("SERVICE".equalsIgnoreCase(typePassage.trim())) return true;
+        throw new IllegalArgumentException("Type de passage invalide (COMMERCIAL ou SERVICE).");
+    }
+
+    // L'appui est facultatif ; le visiteur principal ne peut pas être son propre appui
+    static String commercialAppui(String appui, String visiteur) {
+        if (appui == null || appui.isBlank()) return null;
+        String valeur = appui.trim();
+        if (visiteur != null && valeur.equalsIgnoreCase(visiteur.trim())) return null;
+        return valeur.length() > 255 ? valeur.substring(0, 255) : valeur;
     }
 
     private QualificationVisite parseQualification(String qualification) {
@@ -739,6 +760,8 @@ public class ActionService {
                     dto.setVisiteur(v.getVisiteur());
                     dto.setQualification(v.getQualification() != null ? v.getQualification().name() : null);
                     dto.setCommentaire(v.getCommentaire());
+                    dto.setTypeVisite(v.getTypeVisite() != null ? v.getTypeVisite().name() : null);
+                    dto.setCommercialAppui(v.getCommercialAppui());
                     dto.setCreatedAt(v.getCreatedAt());
                     if (v.getMedecin() != null) {
                         Medecin m = v.getMedecin();

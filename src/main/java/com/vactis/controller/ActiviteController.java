@@ -11,18 +11,22 @@ import com.vactis.dto.activite.TopMouvementsResponse;
 import com.vactis.dto.activite.TransitionsStatutsResponse;
 import com.vactis.dto.activite.ActionsVactisResponse;
 import com.vactis.dto.activite.CompteRenduTerrainResponse;
+import com.vactis.dto.activite.EquipeCommercialeResponse;
+import com.vactis.service.Activite.ActiviteEquipeService;
 import com.vactis.service.Activite.ActiviteImpactService;
 import com.vactis.service.Activite.ActivitePortefeuilleService;
 import com.vactis.service.Activite.ActiviteService;
 import com.vactis.service.Activite.ActiviteTerrainService;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 // Contrôleur REST pour le suivi de l'activité mensuelle
@@ -37,6 +41,7 @@ public class ActiviteController {
     private final ActivitePortefeuilleService activitePortefeuilleService;
     private final ActiviteTerrainService activiteTerrainService;
     private final ActiviteImpactService activiteImpactService;
+    private final ActiviteEquipeService activiteEquipeService;
 
     // Retourne les KPIs d'activité pour un mois donné (CA, cas, médecins actifs, etc.)
     @GetMapping("/kpis-mensuels")
@@ -155,5 +160,18 @@ public class ActiviteController {
             @RequestParam(name = "mois", required = false) String mois
     ) {
         return ResponseEntity.ok(activiteImpactService.getConcordanceQualification(mois));
+    }
+
+    // Onglet « Équipe commerciale » : visites, échanges, comparaison et suites à donner
+    @GetMapping("/equipe-commerciale")
+    public ResponseEntity<EquipeCommercialeResponse> getEquipeCommerciale(
+            @RequestParam(name = "debut", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate debut,
+            @RequestParam(name = "fin", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fin,
+            @RequestParam(name = "commercial", required = false) String commercial
+    ) {
+        if (debut != null && fin != null && fin.isBefore(debut)) {
+            throw new IllegalArgumentException("La fin de période doit suivre le début.");
+        }
+        return ResponseEntity.ok(activiteEquipeService.getEquipeCommerciale(debut, fin, commercial));
     }
 }

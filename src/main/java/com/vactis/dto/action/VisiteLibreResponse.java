@@ -16,6 +16,9 @@ public class VisiteLibreResponse {
     private String visiteur;
     private String qualification;
     private String commentaire;
+    /** SERVICE pour un passage de service, sinon type commercial ou null. */
+    private String typeVisite;
+    private String commercialAppui;
     private LocalDateTime createdAt;
 
     // Champs médecin dénormalisés — évite la sérialisation lazy de l'entité Medecin

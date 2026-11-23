@@ -44,4 +44,7 @@ public class SaisieRetourTerrainRequest {
 
     /** Due date for next action. */
     private LocalDate dateProchaineAction;
+
+    /** Commercial venu en appui (optionnel). */
+    private String commercialAppui;
 }

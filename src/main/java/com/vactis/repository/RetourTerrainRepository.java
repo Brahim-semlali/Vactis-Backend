@@ -73,7 +73,13 @@ public interface RetourTerrainRepository extends JpaRepository<RetourTerrain, Lo
     List<RetourTerrain> findVactisByDateVisiteBetween(
             @Param("start") LocalDate start,
             @Param("end") LocalDate end);
+
+    /** Toutes les visites avec médecin et action chargés (Lecture activité → Équipe commerciale). */
+    @Query("""
+        select r from RetourTerrain r
+        left join fetch r.action a
+        join fetch r.medecin m
+        order by r.dateVisite desc, r.id desc
+    """)
+    List<RetourTerrain> findAllWithFetch();
 }
-
-
-

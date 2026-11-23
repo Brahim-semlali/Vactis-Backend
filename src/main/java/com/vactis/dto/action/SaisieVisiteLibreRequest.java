@@ -30,4 +30,10 @@ public class SaisieVisiteLibreRequest {
     private Double noteTerrain;
     private String prochaineAction;
     private LocalDate dateProchaineAction;
+
+    /** COMMERCIAL (échange avec le médecin, par défaut) ou SERVICE (passage logistique). */
+    private String typePassage;
+
+    /** Commercial venu en appui (optionnel). */
+    private String commercialAppui;
 }
