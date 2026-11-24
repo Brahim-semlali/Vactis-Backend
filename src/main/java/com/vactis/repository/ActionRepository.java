@@ -20,6 +20,9 @@ import java.util.List;
 @Repository
 public interface ActionRepository extends JpaRepository<Action, Long> {
 
+    /** Toutes les actions d'un médecin (fiche 360°). */
+    List<Action> findByMedecinId(Long medecinId);
+
     // Compte le nombre total d'actions en base
     @Query("""
         select count(a)

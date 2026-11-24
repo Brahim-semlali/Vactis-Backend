@@ -1,5 +1,6 @@
 package com.vactis.controller;
 
+import com.vactis.dto.medecin.Fiche360Response;
 import com.vactis.dto.medecin.MedecinGeolocaliseDto;
 import com.vactis.dto.medecin.MedecinLocalisationRequest;
 import com.vactis.dto.medecin.MedecinPageResponse;
@@ -9,16 +10,23 @@ import com.vactis.model.medecin.Medecin;
 import com.vactis.model.medecin.RetourTerrain;
 import com.vactis.model.medecin.RisqueUrgence;
 import com.vactis.model.medecin.StatutPilotage;
+import com.vactis.service.Fiche360PdfService;
+import com.vactis.service.Fiche360Service;
 import com.vactis.service.MedecinService;
 import com.vactis.service.RetourTerrainService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.text.Normalizer;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -29,6 +37,33 @@ import java.util.Map;
 public class MedecinController {
     private final MedecinService medecinService;
     private final RetourTerrainService retourTerrainService;
+    private final Fiche360Service fiche360Service;
+    private final Fiche360PdfService fiche360PdfService;
+
+    // Fiche médecin 360° : identité, activité, frise, visites, actions, réclamations, dossiers
+    @GetMapping("/{id}/fiche-360")
+    public Fiche360Response getFiche360(@PathVariable Long id) {
+        return fiche360Service.getFiche(id, LocalDate.now());
+    }
+
+    // Export PDF de la fiche médecin 360°
+    @GetMapping("/{id}/fiche-360/pdf")
+    public ResponseEntity<byte[]> telechargerFiche360(@PathVariable Long id,
+                                                      org.springframework.security.core.Authentication authentication) {
+        Fiche360Response fiche = fiche360Service.getFiche(id, LocalDate.now());
+        byte[] pdf = fiche360PdfService.generer(fiche, authentication == null ? null : authentication.getName());
+        String nom = "fiche-360-" + slug(fiche.getIdentite().getNomComplet()) + "-" + fiche.getDateEdition() + ".pdf";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(nom).build().toString())
+                .body(pdf);
+    }
+
+    private static String slug(String texte) {
+        String ascii = Normalizer.normalize(texte == null ? "" : texte, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+        String slug = ascii.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        return slug.isEmpty() ? "medecin" : slug;
+    }
 
     // Récupère la page des médecins avec filtres, KPIs et métadonnées
     @GetMapping
