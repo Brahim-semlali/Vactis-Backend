@@ -515,7 +515,7 @@ public class ActionService {
         boolean service = estPassageService(request.getTypePassage());
         // Un passage de service n'est pas un échange commercial : il n'est pas qualifié
         if (service) request.setQualification(QualificationVisite.NON_RENSEIGNE.name());
-        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), null, request.getDateDepart(), request.getDateRetourPrevue(), request.getDateRevue());
+        validateVisitRequest(request.getActionRealisee(), request.getDateVisite(), request.getMotifNonRealisation(), request.getQualification(), request.getCommentaire(), request.getNoteTerrain(), request.getDateProchaineAction(), request.getObstaclePrincipal(), request.getDateDepart(), request.getDateRetourPrevue(), request.getDateRevue());
         Medecin medecin = null;
         if (request.getMedecinId() != null) {
             medecin = medecinRepository.findById(request.getMedecinId())
@@ -549,9 +549,12 @@ public class ActionService {
         if (service) rt.setTypeVisite(TypeVisite.SERVICE);
         rt.setNote(request.getNoteTerrain());
         rt.setQualification(parseQualification(request.getQualification()));
-            rt.setDateDepart(request.getDateDepart());
-            rt.setDateRetourPrevue(request.getDateRetourPrevue());
-            rt.setDateRevue(request.getDateRevue());
+        rt.setDateDepart(request.getDateDepart());
+        rt.setDateRetourPrevue(request.getDateRetourPrevue());
+        rt.setDateRevue(request.getDateRevue());
+        if (!service) {
+            rt.setObstaclePrincipal(parseObstacle(request.getObstaclePrincipal()));
+        }
         if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
             rt.setReclamation(true);
         }
@@ -559,7 +562,7 @@ public class ActionService {
         rt = retourTerrainRepository.save(rt);
 
         if ("RECLAMATION".equalsIgnoreCase(request.getQualification())) {
-                creerTicketReclamationAutomatique(medecin, request.getCommentaire(), null, rt.getId(),
+            creerTicketReclamationAutomatique(medecin, request.getCommentaire(), rt.getObstaclePrincipal(), rt.getId(),
                     rt.getDateVisite(), username != null ? username : "Commercial");
         }
 

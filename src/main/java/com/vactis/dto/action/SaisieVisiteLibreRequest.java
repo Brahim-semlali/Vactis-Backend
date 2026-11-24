@@ -23,6 +23,8 @@ public class SaisieVisiteLibreRequest {
     private Boolean actionRealisee = true;
     private String motifNonRealisation;
     private String qualification;
+    /** Obligatoire si la qualification est DEFAVORABLE (PRIX_TARIF, QUALITE, DELAI...). */
+    private String obstaclePrincipal;
     private LocalDate dateDepart;
     private LocalDate dateRetourPrevue;
     private LocalDate dateRevue;

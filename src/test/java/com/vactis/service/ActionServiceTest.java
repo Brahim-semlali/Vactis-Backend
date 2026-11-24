@@ -7,6 +7,7 @@ import com.vactis.model.action.TypeEtapeRetention;
 import com.vactis.model.action.UrgenceAction;
 import com.vactis.dto.action.SaisieRetourTerrainRequest;
 import com.vactis.dto.action.SaisieVisiteLibreRequest;
+import com.vactis.model.medecin.ObstaclePrincipal;
 import com.vactis.model.medecin.QualificationVisite;
 import com.vactis.model.medecin.TypeVisite;
 import com.vactis.dto.reclamation.ReclamationRequest;
@@ -323,6 +324,37 @@ class ActionServiceTest {
         assertEquals(TypeVisite.SERVICE, retour.getTypeVisite());
         assertEquals(QualificationVisite.NON_RENSEIGNE, retour.getQualification());
         assertEquals("Commercial 2", retour.getCommercialAppui());
+    }
+
+    @Test
+    void visiteLibreDefavorableAvecObstacleEstEnregistree() {
+        Medecin medecin = new Medecin();
+        medecin.setId(5L);
+        when(medecinRepository.findById(5L)).thenReturn(Optional.of(medecin));
+        when(retourTerrainRepository.save(any(RetourTerrain.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        SaisieVisiteLibreRequest request = new SaisieVisiteLibreRequest();
+        request.setMedecinId(5L);
+        request.setDateVisite(LocalDate.now());
+        request.setQualification("DEFAVORABLE");
+        request.setCommentaire("Trouve nos tarifs trop élevés");
+        request.setObstaclePrincipal("prix_tarif");
+
+        RetourTerrain retour = actionService.creerVisiteLibre(request, "Commercial 1");
+
+        assertEquals(QualificationVisite.DEFAVORABLE, retour.getQualification());
+        assertEquals(ObstaclePrincipal.PRIX_TARIF, retour.getObstaclePrincipal());
+    }
+
+    @Test
+    void visiteLibreDefavorableSansObstacleEstRefusee() {
+        SaisieVisiteLibreRequest request = new SaisieVisiteLibreRequest();
+        request.setMedecinId(5L);
+        request.setDateVisite(LocalDate.now());
+        request.setQualification("DEFAVORABLE");
+        request.setCommentaire("Pas intéressé");
+
+        assertThrows(IllegalArgumentException.class, () -> actionService.creerVisiteLibre(request, "Commercial 1"));
     }
 
     @Test
