@@ -169,18 +169,120 @@ class ActiviteEquipeServiceTest {
     }
 
     @Test
-    void vueIndividuelleNeGardeQueLesPassagesPrincipauxEtSesActions() {
+    void vueIndividuelleGardeSesPassagesSeulEtSesVisitesCommunesEtSesActions() {
         EquipeCommercialeResponse res = service.getEquipeCommerciale(DEBUT, FIN, "  COMMERCIAL 1 ");
 
         assertEquals("COMMERCIAL 1", res.getCommercial());
-        assertEquals(3, res.getSynthese().getPassagesSaisis());
+        // 3 passages seul + la visite VACTIS faite avec Commercial 2 (l'ordre des noms ne compte pas)
+        assertEquals(4, res.getSynthese().getPassagesSaisis());
         assertEquals(1, res.getSynthese().getParticipationsAppui());
-        assertEquals(0, res.getSynthese().getVisitesVactis());
-        assertEquals(3, res.getVisites().size());
+        assertEquals(1, res.getSynthese().getVisitesCommunes());
+        assertEquals(1, res.getSynthese().getVisitesVactis());
+        assertEquals(4, res.getVisites().size());
         assertEquals(1, res.getDecisions().getActionsSansVisite().size());
 
         EquipeCommercialeResponse autre = service.getEquipeCommerciale(DEBUT, FIN, "Commercial 2");
         assertTrue(autre.getDecisions().getActionsSansVisite().isEmpty());
+    }
+
+    @Test
+    void uneVisiteCommuneCompteUneFoisPourLEquipeEtPourChacunDesDeuxParticipants() {
+        EquipeCommercialeResponse res = service.getEquipeCommerciale(DEBUT, FIN, null);
+        assertEquals(1, res.getSynthese().getVisitesCommunes());
+        assertEquals(4, res.getSynthese().getPassagesRealises(), "la visite commune n'est pas comptée deux fois");
+
+        LigneCommercial c1 = res.getParCommercial().get(0);
+        assertEquals(3, c1.getVisitesSeul());
+        assertEquals(1, c1.getVisitesCommunes());
+        assertEquals(0, c1.getVactisSeul());
+        assertEquals(3, c1.getHorsVactisSeul());
+        assertEquals(1, c1.getServicesSeul());
+        assertEquals(2, c1.getEchangesSeul());
+        assertEquals(0, c1.getRetoursFavorablesSeul());
+        assertEquals(1, c1.getEchangesCommuns());
+        assertEquals(1, c1.getRetoursFavorablesCommuns());
+
+        LigneCommercial c2 = res.getParCommercial().get(1);
+        assertEquals(0, c2.getVisitesSeul(), "la visite non réalisée et la visite commune ne sont pas « seul »");
+        assertEquals(1, c2.getVisitesCommunes());
+        assertEquals(0, c2.getProgressionsSeul(), "l'évolution individuelle porte sur les visites seul");
+        assertEquals(0, c2.getComparablesSeul());
+    }
+
+    @Test
+    void rapportDesBaissesMedecinsRepetitionsEtRetoursFavorablesMalgreLaBaisse() {
+        YearMonth septembre = YearMonth.of(2025, 9);
+        RetourTerrain baisseSeptembre = visite(106L, connu1, "Commercial 1", LocalDate.of(2025, 9, 15), QualificationVisite.NEUTRE);
+        baisseSeptembre.setAction(actionVisitee);
+        RetourTerrain relaisOctobre = visite(100L, connu1, "commercial 2", LocalDate.of(2025, 10, 5), QualificationVisite.FAVORABLE);
+        relaisOctobre.setAction(actionVisitee);
+        when(retourTerrainRepository.findAllWithFetch()).thenReturn(List.of(baisseSeptembre, relaisOctobre));
+        when(extractionDonneesRepository.findAllDatesDescending())
+                .thenReturn(List.of(LocalDate.of(2025, 11, 20), LocalDate.of(2025, 10, 3), LocalDate.of(2025, 9, 2)));
+        when(portefeuilleService.buildStatutMapForMonth(eq(septembre), any())).thenReturn(Map.of(1L, "progression"));
+        when(portefeuilleService.buildStatutMapForMonth(eq(NOVEMBRE), any())).thenReturn(Map.of(1L, "retention"));
+
+        EquipeCommercialeResponse res = service.getEquipeCommerciale(null, null, null);
+        EquipeCommercialeResponse.RapportBaisses r = res.getRapportBaisses();
+
+        assertEquals(2, r.getBaisses());
+        assertEquals(2, r.getComparables());
+        assertEquals(1, r.getMedecinsEnBaisse());
+        assertEquals(1, r.getMedecinsBaissesRepetees(), "baisses sur septembre puis octobre");
+        assertEquals(1, r.getFavorablesMalgreBaisse());
+        assertEquals(1, res.getDecisions().getBaissesMalgreFavorable());
+        assertTrue(r.getProgressions().isEmpty());
+        assertEquals(List.of(LocalDate.of(2025, 10, 5), LocalDate.of(2025, 9, 15)),
+                r.getBaissesObservees().stream().map(EquipeCommercialeResponse.LigneEvolution::getDateVisite).toList());
+        assertEquals("surveillance", r.getBaissesObservees().get(0).getStatutAvant());
+        assertEquals("retention", r.getBaissesObservees().get(0).getStatutApres());
+        assertEquals(2, r.getTransitionsFrequentes().size());
+        assertEquals(1, r.getTransitionsFrequentes().get(0).getNombre());
+    }
+
+    @Test
+    void lesProgressionsSontListeesAvecLeCommercialEtLaQualification() {
+        EquipeCommercialeResponse.RapportBaisses r = service.getEquipeCommerciale(DEBUT, FIN, null).getRapportBaisses();
+
+        assertEquals(0, r.getBaisses());
+        assertEquals(1, r.getComparables());
+        assertEquals(1, r.getProgressions().size());
+        EquipeCommercialeResponse.LigneEvolution p = r.getProgressions().get(0);
+        assertEquals("ALAOUI Test", p.getMedecinNom());
+        assertEquals("commercial 2", p.getCommercial());
+        assertEquals("Commercial 1", p.getCommercialAppui());
+        assertEquals("FAVORABLE", p.getQualification());
+    }
+
+    @Test
+    void lesDatesIncoherentesSontEcarteesEtListees() {
+        RetourTerrain sansDate = visite(201L, connu1, "Commercial 1", null, QualificationVisite.FAVORABLE);
+        RetourTerrain future = visite(202L, connu1, "Commercial 2", LocalDate.of(2026, 3, 1), QualificationVisite.FAVORABLE);
+        RetourTerrain ancienne = visite(203L, connu1, "Commercial 1", LocalDate.of(1999, 12, 31), QualificationVisite.FAVORABLE);
+        RetourTerrain valide = visite(204L, connu1, "Commercial 1", LocalDate.of(2025, 10, 20), QualificationVisite.NEUTRE);
+        when(retourTerrainRepository.findAllWithFetch()).thenReturn(List.of(sansDate, future, ancienne, valide));
+
+        EquipeCommercialeResponse res = service.getEquipeCommerciale(null, null, null, LocalDate.of(2025, 12, 31));
+
+        assertEquals(1, res.getSynthese().getPassagesSaisis());
+        assertEquals(List.of("Date de visite absente", "Date de visite dans le futur", "Date de visite antérieure à 2000"),
+                res.getDatesEcartees().stream().map(EquipeCommercialeResponse.DateEcartee::getMotif).toList());
+        assertEquals(List.of("2025-10"), res.getMoisDisponibles(), "les dates écartées ne créent pas de mois");
+
+        EquipeCommercialeResponse individuel = service.getEquipeCommerciale(null, null, "Commercial 2", LocalDate.of(2025, 12, 31));
+        assertEquals(List.of(202L), individuel.getDatesEcartees().stream().map(EquipeCommercialeResponse.DateEcartee::getRetourTerrainId).toList());
+    }
+
+    @Test
+    void lesRetoursDefavorablesSontAReprendre() {
+        RetourTerrain refus = visite(300L, connu2, "Commercial 1", LocalDate.of(2025, 10, 22), QualificationVisite.DEFAVORABLE);
+        RetourTerrain reclamation = visite(301L, connu2, "Commercial 1", LocalDate.of(2025, 10, 23), QualificationVisite.RECLAMATION);
+        when(retourTerrainRepository.findAllWithFetch()).thenReturn(List.of(refus, reclamation));
+
+        EquipeCommercialeResponse.Decisions d = service.getEquipeCommerciale(DEBUT, FIN, null).getDecisions();
+
+        assertEquals(1, d.getRetoursDefavorables());
+        assertEquals(2, d.getRefusOuReclamations());
     }
 
     @Test

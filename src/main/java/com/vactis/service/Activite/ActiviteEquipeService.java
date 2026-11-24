@@ -2,6 +2,10 @@ package com.vactis.service.Activite;
 
 import com.vactis.dto.activite.EquipeCommercialeResponse;
 import com.vactis.dto.activite.EquipeCommercialeResponse.ActionSansVisite;
+import com.vactis.dto.activite.EquipeCommercialeResponse.DateEcartee;
+import com.vactis.dto.activite.EquipeCommercialeResponse.LigneEvolution;
+import com.vactis.dto.activite.EquipeCommercialeResponse.RapportBaisses;
+import com.vactis.dto.activite.EquipeCommercialeResponse.Transition;
 import com.vactis.dto.activite.EquipeCommercialeResponse.Decisions;
 import com.vactis.dto.activite.EquipeCommercialeResponse.LigneCommercial;
 import com.vactis.dto.activite.EquipeCommercialeResponse.LigneVisite;
@@ -34,6 +38,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * Lecture activité → onglet « Équipe commerciale » : travail confié et terrain parcouru,
@@ -45,6 +50,9 @@ import java.util.function.Predicate;
 public class ActiviteEquipeService {
 
     static final String NON_RENSEIGNE = "Non renseigné";
+    /** Une date de visite antérieure à cette borne est considérée comme une erreur de saisie. */
+    static final LocalDate PREMIERE_DATE_PLAUSIBLE = LocalDate.of(2000, 1, 1);
+    static final int TRANSITIONS_AFFICHEES = 3;
     static final String AVERTISSEMENT = "Les évolutions comparent le statut du médecin le mois de la visite VACTIS et le mois suivant. "
             + "Elles ne démontrent pas que la visite a causé le changement.";
 
@@ -55,8 +63,28 @@ public class ActiviteEquipeService {
 
     @Transactional(readOnly = true)
     public EquipeCommercialeResponse getEquipeCommerciale(LocalDate debut, LocalDate fin, String commercial) {
+        return getEquipeCommerciale(debut, fin, commercial, LocalDate.now());
+    }
+
+    EquipeCommercialeResponse getEquipeCommerciale(LocalDate debut, LocalDate fin, String commercial, LocalDate aujourdhui) {
         String filtre = estVide(commercial) ? null : commercial.trim();
-        List<RetourTerrain> tous = retourTerrainRepository.findAllWithFetch();
+        // Contrôle qualité : les dates incohérentes sont écartées de toute la lecture et listées à part
+        List<RetourTerrain> tous = new ArrayList<>();
+        List<DateEcartee> datesEcartees = new ArrayList<>();
+        for (RetourTerrain r : retourTerrainRepository.findAllWithFetch()) {
+            String motif = motifDateIncoherente(r.getDateVisite(), aujourdhui);
+            if (motif == null) {
+                tous.add(r);
+            } else if (filtre == null || memeCommercial(r.getVisiteur(), filtre) || memeCommercial(r.getCommercialAppui(), filtre)) {
+                datesEcartees.add(DateEcartee.builder()
+                        .retourTerrainId(r.getId())
+                        .medecinNom(r.getMedecin() == null ? NON_RENSEIGNE : nomMedecin(r.getMedecin()))
+                        .commercial(estVide(r.getVisiteur()) ? NON_RENSEIGNE : r.getVisiteur().trim())
+                        .dateVisite(r.getDateVisite())
+                        .motif(motif)
+                        .build());
+            }
+        }
         List<Action> actions = actionRepository.findAll();
 
         List<RetourTerrain> periode = tous.stream()
@@ -68,8 +96,8 @@ public class ActiviteEquipeService {
         List<Passage> passages = periode.stream()
                 .map(r -> Passage.de(r, medecinsConnus, observations.get(r.getId())))
                 .toList();
-        // Vue individuelle : passages dont le commercial est le visiteur principal
-        List<Passage> principaux = passages.stream().filter(p -> filtre == null || memeCommercial(p.commercial, filtre)).toList();
+        // Vue individuelle : passages du commercial, seul ou en visite commune (sans priorité entre participants)
+        List<Passage> principaux = passages.stream().filter(p -> filtre == null || p.participe(filtre)).toList();
         long appuisFiltre = passages.stream().filter(p -> p.realise && filtre != null && memeCommercial(p.appui, filtre)).count();
 
         String cycleActif = cycleActif(actions);
@@ -88,6 +116,8 @@ public class ActiviteEquipeService {
                         .map(Passage::toLigne)
                         .toList())
                 .decisions(decisions(principaux, actions, tous, cycleActif, filtre))
+                .rapportBaisses(rapportBaisses(principaux))
+                .datesEcartees(datesEcartees)
                 .avertissement(AVERTISSEMENT)
                 .build();
     }
@@ -147,6 +177,7 @@ public class ActiviteEquipeService {
                 .prospects(medecins(passages, true))
                 .relais(compter(passages, p -> p.realise && p.relais))
                 .participationsAppui(participationsAppui)
+                .visitesCommunes(compter(passages, p -> p.realise && p.appui != null))
                 .build();
     }
 
@@ -158,6 +189,8 @@ public class ActiviteEquipeService {
         });
         return noms.values().stream().map(nom -> {
             List<Passage> siens = passages.stream().filter(p -> memeCommercial(p.commercial, nom)).toList();
+            List<Passage> seuls = passages.stream().filter(p -> p.realise && p.appui == null && memeCommercial(p.commercial, nom)).toList();
+            List<Passage> communs = passages.stream().filter(p -> p.realise && p.appui != null && p.participe(nom)).toList();
             return LigneCommercial.builder()
                     .commercial(nom)
                     .passagesSaisis(siens.size())
@@ -176,6 +209,23 @@ public class ActiviteEquipeService {
                     .comparables(compter(siens, p -> p.evolution() != null && !EvolutionStatutPolicy.NON_OBSERVABLE.equals(p.evolution())))
                     .baisses(compter(siens, p -> EvolutionStatutPolicy.DEFAVORABLE.equals(p.evolution())))
                     .relais(compter(siens, p -> p.realise && p.relais))
+                    .visitesSeul(seuls.size())
+                    .visitesCommunes(communs.size())
+                    .vactisSeul(compter(seuls, p -> p.vactis))
+                    .horsVactisSeul(compter(seuls, p -> !p.vactis))
+                    .servicesSeul(compter(seuls, p -> p.service))
+                    .echangesSeul(compter(seuls, Passage::estEchange))
+                    .medecinsEnEchangeSeul(medecins(seuls, false))
+                    .prospectsSeul(medecins(seuls, true))
+                    .retoursQualifiesSeul(compter(seuls, p -> p.estEchange() && p.qualification != QualificationVisite.NON_RENSEIGNE))
+                    .retoursFavorablesSeul(compter(seuls, p -> p.estEchange() && p.qualification == QualificationVisite.FAVORABLE))
+                    .refusSeul(compter(seuls, p -> p.estEchange() && p.refusOuReclamation()))
+                    .progressionsSeul(compter(seuls, p -> EvolutionStatutPolicy.FAVORABLE.equals(p.evolution())))
+                    .stablesSeul(compter(seuls, p -> EvolutionStatutPolicy.STABLE.equals(p.evolution())))
+                    .baissesSeul(compter(seuls, p -> EvolutionStatutPolicy.DEFAVORABLE.equals(p.evolution())))
+                    .comparablesSeul(compter(seuls, Passage::comparable))
+                    .echangesCommuns(compter(communs, Passage::estEchange))
+                    .retoursFavorablesCommuns(compter(communs, p -> p.estEchange() && p.qualification == QualificationVisite.FAVORABLE))
                     .build();
         }).toList();
     }
@@ -224,10 +274,56 @@ public class ActiviteEquipeService {
                 .cycleActif(cycleActif)
                 .actionsSansVisite(sansVisite)
                 .refusOuReclamations(compter(passages, p -> p.estEchange() && p.refusOuReclamation()))
+                .retoursDefavorables(compter(passages, p -> p.estEchange() && p.qualification == QualificationVisite.DEFAVORABLE))
+                .baissesMalgreFavorable(compter(passages, Passage::baisseMalgreFavorable))
                 .baissesObservees(passages.stream().filter(p -> EvolutionStatutPolicy.DEFAVORABLE.equals(p.evolution()))
                         .map(p -> p.medecinId).distinct().count())
                 .retoursACompleter(compter(passages, p -> p.estEchange() && p.qualification == QualificationVisite.NON_RENSEIGNE))
                 .build();
+    }
+
+    // ── Rapport sur les baisses ──────────────────────────────────────────────
+
+    private RapportBaisses rapportBaisses(List<Passage> passages) {
+        List<Passage> baisses = passages.stream()
+                .filter(p -> EvolutionStatutPolicy.DEFAVORABLE.equals(p.evolution()))
+                .sorted(Comparator.comparing((Passage p) -> p.date, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+        List<Passage> progressions = passages.stream()
+                .filter(p -> EvolutionStatutPolicy.FAVORABLE.equals(p.evolution()))
+                .sorted(Comparator.comparing((Passage p) -> p.date, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+
+        Map<Long, Set<YearMonth>> moisDeBaisse = new HashMap<>();
+        baisses.forEach(p -> moisDeBaisse.computeIfAbsent(p.medecinId, k -> new HashSet<>()).add(YearMonth.from(p.date)));
+
+        Map<List<String>, Long> parTransition = baisses.stream()
+                .collect(Collectors.groupingBy(p -> List.of(p.observation.statutAvant(), p.observation.statutApres()), Collectors.counting()));
+        List<Transition> transitions = parTransition.entrySet().stream()
+                .sorted(Map.Entry.<List<String>, Long>comparingByValue().reversed()
+                        .thenComparing(e -> e.getKey().get(0) + "→" + e.getKey().get(1)))
+                .limit(TRANSITIONS_AFFICHEES)
+                .map(e -> Transition.builder().statutAvant(e.getKey().get(0)).statutApres(e.getKey().get(1)).nombre(e.getValue()).build())
+                .toList();
+
+        return RapportBaisses.builder()
+                .baisses(baisses.size())
+                .comparables(compter(passages, Passage::comparable))
+                .medecinsEnBaisse(moisDeBaisse.size())
+                .medecinsBaissesRepetees(moisDeBaisse.values().stream().filter(mois -> mois.size() >= 2).count())
+                .favorablesMalgreBaisse(compter(passages, Passage::baisseMalgreFavorable))
+                .transitionsFrequentes(transitions)
+                .progressions(progressions.stream().map(Passage::toEvolution).toList())
+                .baissesObservees(baisses.stream().map(Passage::toEvolution).toList())
+                .build();
+    }
+
+    /** Motif d'exclusion d'une date de visite, ou null si elle est plausible. */
+    static String motifDateIncoherente(LocalDate date, LocalDate aujourdhui) {
+        if (date == null) return "Date de visite absente";
+        if (date.isAfter(aujourdhui)) return "Date de visite dans le futur";
+        if (date.isBefore(PREMIERE_DATE_PLAUSIBLE)) return "Date de visite antérieure à 2000";
+        return null;
     }
 
     // ── Listes de référence ──────────────────────────────────────────────────
@@ -252,7 +348,7 @@ public class ActiviteEquipeService {
     }
 
     /** Classeur actif : le cycle mensuel le plus récent parmi les actions. */
-    static String cycleActif(List<Action> actions) {
+    public static String cycleActif(List<Action> actions) {
         return actions.stream().map(Action::getCycleMensuel).filter(c -> !estVide(c))
                 .max(Comparator.naturalOrder()).orElse(null);
     }
@@ -319,6 +415,35 @@ public class ActiviteEquipeService {
 
         boolean estEchange() {
             return realise && !service;
+        }
+
+        /** Le commercial a fait ce passage, comme visiteur ou en appui (aucune priorité entre les deux). */
+        boolean participe(String nom) {
+            return memeCommercial(commercial, nom) || memeCommercial(appui, nom);
+        }
+
+        boolean comparable() {
+            String e = evolution();
+            return e != null && !EvolutionStatutPolicy.NON_OBSERVABLE.equals(e);
+        }
+
+        boolean baisseMalgreFavorable() {
+            return estEchange() && qualification == QualificationVisite.FAVORABLE
+                    && EvolutionStatutPolicy.DEFAVORABLE.equals(evolution());
+        }
+
+        LigneEvolution toEvolution() {
+            return LigneEvolution.builder()
+                    .retourTerrainId(source.getId())
+                    .medecinId(medecinId)
+                    .medecinNom(estVide(source.getNomMedecin()) ? nomMedecin(source.getMedecin()) : source.getNomMedecin())
+                    .dateVisite(date)
+                    .statutAvant(observation == null ? null : observation.statutAvant())
+                    .statutApres(observation == null ? null : observation.statutApres())
+                    .commercial(commercial)
+                    .commercialAppui(appui)
+                    .qualification(qualification.name())
+                    .build();
         }
 
         boolean refusOuReclamation() {

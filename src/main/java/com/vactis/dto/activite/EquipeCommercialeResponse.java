@@ -19,7 +19,11 @@ import java.util.Map;
  * - échange commercial : passage réalisé qui n'est pas un passage de service ;
  * - prospect : médecin sans aucun dossier dans l'extraction du laboratoire ;
  * - relais : visite VACTIS réalisée par un autre commercial que le prioritaire de l'action ;
- * - évolution observée : règle R4 (statut M → M+1), uniquement pour les visites VACTIS.
+ * - visite commune : passage réalisé avec un commercial en appui. Elle compte une fois pour l'équipe et
+ *   comme participation commune pour chacun des deux, sans priorité liée à l'ordre des noms ;
+ * - « seul » : passage réalisé sans commercial en appui (base des taux individuels) ;
+ * - évolution observée : règle R4 (statut M → M+1), uniquement pour les visites VACTIS ;
+ * - date incohérente : date de visite absente, future ou antérieure à 2000, écartée de toute la lecture.
  */
 @Data
 @NoArgsConstructor
@@ -44,6 +48,9 @@ public class EquipeCommercialeResponse {
     private Map<String, Long> evolutions;
     private List<LigneVisite> visites;
     private Decisions decisions;
+    private RapportBaisses rapportBaisses;
+    /** Passages écartés pour date incohérente (absente, future ou antérieure à 2000). */
+    private List<DateEcartee> datesEcartees;
     private String avertissement;
 
     @Data
@@ -62,6 +69,8 @@ public class EquipeCommercialeResponse {
         private long prospects;
         private long relais;
         private long participationsAppui;
+        /** Passages réalisés avec un commercial en appui, comptés une seule fois. */
+        private long visitesCommunes;
     }
 
     @Data
@@ -88,6 +97,84 @@ public class EquipeCommercialeResponse {
         private long comparables;
         private long baisses;
         private long relais;
+
+        // ── Lecture « seul / commune » : aucune priorité entre les participants d'une visite commune ──
+        /** Passages réalisés seul (sans appui). */
+        private long visitesSeul;
+        /** Passages réalisés à deux, que le commercial soit saisi comme visiteur ou en appui. */
+        private long visitesCommunes;
+        private long vactisSeul;
+        private long horsVactisSeul;
+        private long servicesSeul;
+        private long echangesSeul;
+        private long medecinsEnEchangeSeul;
+        private long prospectsSeul;
+        private long retoursQualifiesSeul;
+        private long retoursFavorablesSeul;
+        private long refusSeul;
+        private long progressionsSeul;
+        private long stablesSeul;
+        private long baissesSeul;
+        private long comparablesSeul;
+        private long echangesCommuns;
+        private long retoursFavorablesCommuns;
+    }
+
+    /** Lecture équilibrée des baisses de statut observées après les visites VACTIS. */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class RapportBaisses {
+        private long baisses;
+        /** Transitions comparables : progression, stabilité ou baisse. */
+        private long comparables;
+        private long medecinsEnBaisse;
+        /** Médecins dont une baisse est observée sur au moins deux mois de visite différents. */
+        private long medecinsBaissesRepetees;
+        /** Retours qualifiés favorables alors que le statut du médecin a baissé. */
+        private long favorablesMalgreBaisse;
+        private List<Transition> transitionsFrequentes;
+        private List<LigneEvolution> progressions;
+        private List<LigneEvolution> baissesObservees;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class Transition {
+        private String statutAvant;
+        private String statutApres;
+        private long nombre;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class LigneEvolution {
+        private Long retourTerrainId;
+        private Long medecinId;
+        private String medecinNom;
+        private LocalDate dateVisite;
+        private String statutAvant;
+        private String statutApres;
+        private String commercial;
+        private String commercialAppui;
+        private String qualification;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class DateEcartee {
+        private Long retourTerrainId;
+        private String medecinNom;
+        private String commercial;
+        private LocalDate dateVisite;
+        private String motif;
     }
 
     @Data
@@ -129,7 +216,11 @@ public class EquipeCommercialeResponse {
         private String cycleActif;
         private List<ActionSansVisite> actionsSansVisite;
         private long refusOuReclamations;
+        /** Échanges qualifiés défavorables, à reprendre. */
+        private long retoursDefavorables;
         private long baissesObservees;
+        /** Visites qualifiées favorables suivies d'une baisse du statut : à vérifier avec les données du laboratoire. */
+        private long baissesMalgreFavorable;
         private long retoursACompleter;
     }
 
