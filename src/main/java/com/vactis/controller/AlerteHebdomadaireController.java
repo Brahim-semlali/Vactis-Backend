@@ -1,14 +1,17 @@
 package com.vactis.controller;
 
+import com.vactis.dto.alerte.AlertesFinCycleResponse;
 import com.vactis.model.action.Action;
 import com.vactis.model.alerte.AlerteHebdomadaire;
 import com.vactis.model.alerte.StatutAlerte;
+import com.vactis.service.AlerteFinCycleService;
 import com.vactis.service.AlerteHebdomadaireService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -21,6 +24,24 @@ import java.util.Map;
 public class AlerteHebdomadaireController {
 
     private final AlerteHebdomadaireService alerteHebdomadaireService;
+    private final AlerteFinCycleService alerteFinCycleService;
+
+    /**
+     * Alertes de fin de cycle : un commercial reçoit les siennes, la direction / le pilotage toute l'équipe.
+     */
+    @GetMapping("/fin-cycle")
+    public ResponseEntity<AlertesFinCycleResponse> getAlertesFinCycle(Authentication authentication) {
+        String username = authentication == null ? null : authentication.getName();
+        return ResponseEntity.ok(alerteFinCycleService.getAlertes(username, estVueEquipe(authentication), LocalDate.now()));
+    }
+
+    private static boolean estVueEquipe(Authentication authentication) {
+        if (authentication == null) return false;
+        return authentication.getAuthorities().stream().anyMatch(a -> {
+            String auth = a.getAuthority().toUpperCase();
+            return auth.contains("ADMIN") || auth.contains("DIRECTION") || auth.contains("PILOTAGE");
+        });
+    }
 
     @GetMapping
     public ResponseEntity<List<AlerteHebdomadaire>> getAlertesActives() {
