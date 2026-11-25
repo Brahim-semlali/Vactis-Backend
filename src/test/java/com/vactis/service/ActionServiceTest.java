@@ -86,6 +86,50 @@ class ActionServiceTest {
     }
 
     @Test
+    void syncActionsAppliqueLesDelaisDeLaTableControle() {
+        List<Action> actions = new ArrayList<>();
+        String[] niveaux = {"NORMALE", "ELEVEE", "CRITIQUE"};
+        for (int index = 0; index < niveaux.length; index++) {
+            Medecin medecin = new Medecin();
+            medecin.setId((long) index + 1);
+            medecin.setNom("Medecin " + index);
+            medecin.setStatut("PROGRESSION");
+            medecin.setSegment("C");
+            medecin.setNiveauIntensite(niveaux[index]);
+
+            Action action = new Action();
+            action.setMedecin(medecin);
+            action.setStatut("PROGRESSION");
+            action.setSegment("C");
+            action.setActionRecommandee("visite suivi progression");
+            action.setUrgence(com.vactis.model.action.UrgenceAction.FAIBLE);
+            action.setUrgenceSilence(false);
+            action.setEtatAction(EtatAction.PLANIFIEE);
+            action.setHorizonJours(30);
+            actions.add(action);
+        }
+        when(actionRepository.findAll()).thenReturn(actions);
+        when(medecinRepository.isPseudoMedecin(org.mockito.ArgumentMatchers.any(Medecin.class))).thenReturn(false);
+        when(extractionDonneesRepository.findAllDatesDescending()).thenReturn(List.of(LocalDate.of(2026, 9, 15)));
+        when(controleService.paliers(com.vactis.model.Controle.TypeControle.DELAI_ACTION)).thenReturn(
+                PaliersControle.de(com.vactis.model.Controle.TypeControle.DELAI_ACTION, List.of(
+                        delai("NORMALE", 21), delai("ELEVEE", 10), delai("CRITIQUE", 4))));
+
+        actionService.syncActionsWithMedecins();
+
+        assertEquals(List.of(21, 10, 4), actions.stream().map(Action::getHorizonJours).toList());
+    }
+
+    private static com.vactis.model.Controle.Controle delai(String etat, long jours) {
+        com.vactis.model.Controle.Controle c = new com.vactis.model.Controle.Controle();
+        c.setType(com.vactis.model.Controle.TypeControle.DELAI_ACTION);
+        c.setEtat(etat);
+        c.setValeur(jours);
+        c.setActif(true);
+        return c;
+    }
+
+    @Test
     void syncActionsUsesIntensityCategoryForVisitHorizons() {
         List<Action> actions = new ArrayList<>();
         double[] urgencyScores = {10.0, 40.0, 60.0, 70.0, 100.0};

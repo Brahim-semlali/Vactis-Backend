@@ -30,6 +30,12 @@ public class ControleController {
         return controleService.findByType(type);
     }
 
+    // Remplace les règles d'un type de paliers par les règles VACTIS par défaut
+    @PostMapping("/type/{type}/reinitialiser")
+    public List<Controle> reinitialiser(@PathVariable TypeControle type) {
+        return controleService.reinitialiser(type);
+    }
+
     // Crée une nouvelle règle de contrôle
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

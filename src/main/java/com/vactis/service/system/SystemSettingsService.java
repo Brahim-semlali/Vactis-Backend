@@ -71,7 +71,9 @@ public class SystemSettingsService {
         settings.setMaxTentativesConnexion(request.maxTentativesConnexion());
         settings.setDureeBlocageMinutes(request.dureeBlocageMinutes());
         settings.setJournalConnexionActif(request.journalConnexionActif());
-        applyBridgeGoalSettings(settings, request);
+        if (request.bridgeGoalTarget() != null || request.bridgeGoalInputValue() != null) {
+            applyBridgeGoalSettings(settings, request);
+        }
         settings.setUpdatedAt(LocalDateTime.now());
         settings.setUpdatedBy(admin);
         return toResponse(repository.save(settings));
@@ -116,7 +118,7 @@ public class SystemSettingsService {
                 || request.dureeBlocageMinutes() == null || request.dureeBlocageMinutes() < 0
                 || request.mdpExigeMajuscule() == null || request.mdpExigeChiffre() == null
                 || request.mdpExigeCaractereSpecial() == null || request.journalConnexionActif() == null
-                || request.bridgeGoalTarget() == null || request.bridgeGoalTarget() <= 0) {
+                || (request.bridgeGoalTarget() != null && request.bridgeGoalTarget() <= 0)) {
             throw new IllegalArgumentException("Les paramètres doivent respecter des valeurs positives; les expirations et blocages peuvent être à zéro");
         }
     }

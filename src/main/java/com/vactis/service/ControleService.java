@@ -10,6 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 // Service métier pour la gestion et l'application des règles de contrôle (seuils CA et scores)
 @Service
@@ -40,6 +41,7 @@ public class ControleService {
         existing.setEtat(payload.getEtat());
         existing.setMinCA(payload.getMinCA());
         existing.setMaxCA(payload.getMaxCA());
+        existing.setValeur(payload.getValeur());
         existing.setActif(payload.getActif() != null ? payload.getActif() : true);
 
         validateControle(existing);
@@ -52,6 +54,34 @@ public class ControleService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Règle de contrôle introuvable");
         }
         controleRepository.deleteById(idControle);
+    }
+
+    // Paliers actifs d'un type (Rupture, Urgence, Fiabilité, Délai d'action), avec repli sur les règles par défaut.
+    // À charger une fois avant une boucle de calcul, pas par médecin.
+    public PaliersControle paliers(TypeControle type) {
+        return PaliersControle.de(type, controleRepository.findByTypeAndActifTrue(type));
+    }
+
+    // Initialise les types de paliers vides avec les règles VACTIS actuelles. Retourne le nombre de règles créées.
+    public int initialiserReglesParDefaut() {
+        int crees = 0;
+        for (TypeControle type : PaliersControle.ETATS_AUTORISES.keySet()) {
+            if (!controleRepository.findByTypeOrderByMinCAAsc(type).isEmpty()) continue;
+            List<Controle> regles = PaliersControle.reglesParDefaut(type);
+            controleRepository.saveAll(regles);
+            crees += regles.size();
+        }
+        return crees;
+    }
+
+    // Remplace les règles d'un type de paliers par les règles VACTIS par défaut
+    public List<Controle> reinitialiser(TypeControle type) {
+        if (!PaliersControle.ETATS_AUTORISES.containsKey(type)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ce type de contrôle n'a pas de règles par défaut");
+        }
+        controleRepository.deleteAll(controleRepository.findByTypeOrderByMinCAAsc(type));
+        controleRepository.saveAll(PaliersControle.reglesParDefaut(type));
+        return findByType(type);
     }
 
     // Détermine l'état dynamique correspondant à un pourcentage de variation (ou palier de contrôle)
@@ -120,9 +150,11 @@ public class ControleService {
 
         if (type == TypeControle.STATUT) {
             return List.of("PROGRESSION", "ACTIF_STABLE", "SURVEILLANCE", "RETENTION", "SILENCE_CRITIQUE");
-        } else {
-            return List.of("A", "B", "C", "D");
         }
+        if (PaliersControle.ETATS_AUTORISES.containsKey(type)) {
+            return PaliersControle.reglesParDefaut(type).stream().map(Controle::getEtat).toList();
+        }
+        return List.of("A", "B", "C", "D");
     }
 
     // Valide la cohérence des champs d'une règle de contrôle avant enregistrement
@@ -133,14 +165,69 @@ public class ControleService {
         if (controle.getEtat() == null || controle.getEtat().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "L'état est obligatoire");
         }
-        if (controle.getMinCA() == null || controle.getMaxCA() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Les bornes CA min et max sont obligatoires");
-        }
-        if (controle.getMinCA() > controle.getMaxCA()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le CA min ne peut pas dépasser le CA max");
-        }
         if (controle.getActif() == null) {
             controle.setActif(true);
+        }
+
+        Set<String> etatsAutorises = PaliersControle.ETATS_AUTORISES.get(controle.getType());
+        if (etatsAutorises != null) {
+            controle.setEtat(PaliersControle.normaliser(controle.getEtat()));
+            if (!etatsAutorises.contains(controle.getEtat())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "État invalide pour " + controle.getType() + " : valeurs possibles "
+                                + String.join(", ", etatsAutorises.stream().sorted().toList()));
+            }
+        }
+
+        if (controle.getType() == TypeControle.DELAI_ACTION) {
+            if (controle.getValeur() == null || controle.getValeur() <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Le délai en jours doit être supérieur à 0");
+            }
+            controle.setMinCA(null);
+            controle.setMaxCA(null);
+            verifierEtatUnique(controle);
+            return;
+        }
+
+        if (controle.getMinCA() == null || controle.getMaxCA() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Les bornes min et max sont obligatoires");
+        }
+        if (controle.getMinCA() > controle.getMaxCA()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La borne min ne peut pas dépasser la borne max");
+        }
+        if (etatsAutorises != null) {
+            if (controle.getMinCA().equals(controle.getMaxCA())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "La borne max doit être strictement supérieure à la borne min");
+            }
+            verifierSansChevauchement(controle);
+        }
+    }
+
+    // Paliers [min ; max[ : deux règles actives d'un même type ne doivent pas se chevaucher
+    private void verifierSansChevauchement(Controle controle) {
+        if (!Boolean.TRUE.equals(controle.getActif())) return;
+        for (Controle autre : controleRepository.findByTypeAndActifTrue(controle.getType())) {
+            if (Objects.equals(autre.getIdControle(), controle.getIdControle())) continue;
+            if (autre.getMinCA() == null || autre.getMaxCA() == null) continue;
+            boolean chevauche = controle.getMinCA() < autre.getMaxCA() && autre.getMinCA() < controle.getMaxCA();
+            if (chevauche) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Ce palier chevauche le palier " + autre.getEtat()
+                                + " [" + autre.getMinCA() + " ; " + autre.getMaxCA() + "[");
+            }
+        }
+    }
+
+    // Délai d'action : un seul délai actif par niveau
+    private void verifierEtatUnique(Controle controle) {
+        if (!Boolean.TRUE.equals(controle.getActif())) return;
+        for (Controle autre : controleRepository.findByTypeAndActifTrue(controle.getType())) {
+            if (Objects.equals(autre.getIdControle(), controle.getIdControle())) continue;
+            if (controle.getEtat().equalsIgnoreCase(autre.getEtat())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Un délai actif existe déjà pour " + controle.getEtat());
+            }
         }
     }
 }

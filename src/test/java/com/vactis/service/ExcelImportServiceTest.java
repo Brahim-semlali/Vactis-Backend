@@ -23,6 +23,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
@@ -60,6 +61,17 @@ class ExcelImportServiceTest {
         ArgumentCaptor<List<Action>> captor = ArgumentCaptor.forClass(List.class);
         verify(actionRepository).saveAll(captor.capture());
         return captor.getValue();
+    }
+
+    @Test
+    void leStatutDeLImportSeCalculeSurLaVariationDuCaEtNonSurLeMontant() {
+        // 25 000 ce mois contre 20 000 le mois précédent : +25 % (et non 25 000)
+        assertEquals(25L, ExcelImportService.variationCaPourcent(25_000, 20_000));
+        assertEquals(-40L, ExcelImportService.variationCaPourcent(12_000, 20_000));
+        assertEquals(-100L, ExcelImportService.variationCaPourcent(0, 20_000));
+        assertEquals(-33L, ExcelImportService.variationCaPourcent(2, 3));
+        // Pas de CA le mois précédent : variation non calculable -> statut NOUVEAU
+        assertNull(ExcelImportService.variationCaPourcent(25_000, 0));
     }
 
     @Test

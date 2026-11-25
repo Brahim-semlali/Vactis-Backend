@@ -237,6 +237,8 @@ public class ActionService {
 
         boolean modifie = false;
         LocalDate baseDate = derniereReferencePourAction();
+        // Délais d'action (table Contrôle DELAI_ACTION) chargés une seule fois
+        PaliersControle delaisAction = controleService.paliers(TypeControle.DELAI_ACTION);
 
         for (Action a : actions) {
             if (a.getMedecin() != null) {
@@ -299,7 +301,7 @@ public class ActionService {
                 boolean silenceCritiqueStrategique = segmentStrategique
                         && Boolean.TRUE.equals(a.getUrgenceSilence());
                 int horizon = ActionHorizonPolicy.recommanderHorizon(
-                    m.getNiveauIntensite(), silenceCritiqueStrategique);
+                    m.getNiveauIntensite(), silenceCritiqueStrategique, delaisAction);
                 boolean horizonModifie = !Objects.equals(a.getHorizonJours(), horizon);
                 a.setHorizonJours(horizon);
 
@@ -363,7 +365,7 @@ public class ActionService {
                     na.setLieuOrganisme(m.getOrganisme() != null ? m.getOrganisme() : (m.getVille() != null ? m.getVille() : "Cabinet"));
                     na.setCycleMensuel(cycleCourant);
                     int horizon = ActionHorizonPolicy.recommanderHorizon(
-                            m.getNiveauIntensite(), false);
+                            m.getNiveauIntensite(), false, delaisAction);
                     na.setHorizonJours(horizon);
                     na.setDateVisite(baseDate.plusDays(horizon));
                     na.setDateEcheance(na.getDateVisite());

@@ -124,6 +124,9 @@ class SecurityRulesTest {
             // Contrôle qualité : droit de menu uniquement
             "GET,    /api/controle/type/QUALITE,              ROLE_ADMIN,                  403",
             "POST,   /api/controle,                           MENU:/controle,              200",
+            "POST,   /api/controle/type/RUPTURE/reinitialiser, MENU:/controle,             200",
+            "POST,   /api/controle/type/RUPTURE/reinitialiser, CONNECTE,                   403",
+            "POST,   /api/controle/type/RUPTURE/reinitialiser, MENU:/parametres-systeme,   403",
             // Notifications : réservées aux utilisateurs ayant accès aux réclamations
             "GET,    /api/notifications,                      CONNECTE,                    403",
             "GET,    /api/notifications/count,                MENU:/reclamations,          200",

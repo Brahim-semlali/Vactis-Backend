@@ -19,6 +19,8 @@ public class Controle {
     private String etat ;
     private Long minCA ;
     private Long maxCA ;
+    /** Valeur associée à l'état (ex. délai en jours pour DELAI_ACTION) */
+    private Long valeur ;
     private Boolean actif = true ;
 
 }

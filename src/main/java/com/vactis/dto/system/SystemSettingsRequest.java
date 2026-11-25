@@ -20,7 +20,8 @@ public record SystemSettingsRequest(
         @NotNull @Positive Integer maxTentativesConnexion,
         @NotNull @jakarta.validation.constraints.PositiveOrZero Integer dureeBlocageMinutes,
         @NotNull Boolean journalConnexionActif,
-        @NotNull @Positive Long bridgeGoalTarget,
+        // Facultatif : l'objectif Bridge to Goal se règle désormais depuis Contrôle (null = inchangé)
+        @Positive Long bridgeGoalTarget,
         String bridgeGoalMethod,
         BigDecimal bridgeGoalInputValue
 ) {}

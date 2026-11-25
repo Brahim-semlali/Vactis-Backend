@@ -43,6 +43,30 @@ class SystemSettingsServiceTest {
     }
 
     @Test
+    void keepsBridgeGoalWhenSettingsRequestOmitsIt() {
+        Users admin = new Users();
+        admin.setUsername("admin");
+        SystemSettings settings = new SystemSettings();
+        settings.setBridgeGoalTarget(12_000_000L);
+        settings.setBridgeGoalMethod("DIRECT");
+        settings.setBridgeGoalInputValue(BigDecimal.valueOf(12_000_000L));
+        when(repository.findFirstOrCreateDefault()).thenReturn(settings);
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(admin));
+        when(repository.save(any(SystemSettings.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        var context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(new UsernamePasswordAuthenticationToken("admin", null, java.util.Collections.emptyList()));
+        SecurityContextHolder.setContext(context);
+
+        SystemSettingsRequest request = new SystemSettingsRequest(45, 90, 8, false, false, false, 5, 15, true, null, null, null);
+        var response = service.updateSettings(request);
+
+        assertEquals(45, response.dureeSessionMinutes());
+        assertEquals(12_000_000L, response.bridgeGoalTarget());
+        assertEquals("DIRECT", response.bridgeGoalMethod());
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
     void rejectsNonPositiveSettings() {
         SystemSettingsRequest request = new SystemSettingsRequest(0, 90, 8, false, false, false, 5, 15, true, 5000000L, "DIRECT", BigDecimal.valueOf(5000000));
 

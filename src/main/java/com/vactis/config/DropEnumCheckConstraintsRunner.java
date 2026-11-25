@@ -68,6 +68,8 @@ public class DropEnumCheckConstraintsRunner {
         "ALTER TABLE retours_terrain DROP CONSTRAINT IF EXISTS retours_terrain_qualification_check",
         "ALTER TABLE retours_terrain DROP CONSTRAINT IF EXISTS retours_terrain_statut_visite_check",
         "ALTER TABLE retours_terrain DROP CONSTRAINT IF EXISTS retours_terrain_type_visite_check",
+        // Nouveaux types de contrôle (Rupture, Urgence, Fiabilité, Délai d'action).
+        "ALTER TABLE controle DROP CONSTRAINT IF EXISTS controle_type_check",
         // Les dossiers de l'Excel peuvent ne pas avoir de médecin affecté.
         "ALTER TABLE data_fictif ALTER COLUMN medecin_id DROP NOT NULL",
         // La note terrain est facultative; anciennes bases peuvent encore l'imposer.

@@ -1,5 +1,6 @@
 package com.vactis.service;
 
+import com.vactis.model.Controle.TypeControle;
 import com.vactis.model.action.Action;
 import com.vactis.model.action.EtatAction;
 import com.vactis.model.action.UrgenceAction;
@@ -41,6 +42,7 @@ public class AlerteHebdomadaireService {
     private final ExtractionDonneesRepository extractionDonneesRepository;
     private final ActionRepository actionRepository;
     private final RetourTerrainRepository retourTerrainRepository;
+    private final ControleService controleService;
 
     /**
      * Tâche hebdomadaire programmée : tourne chaque lundi à 04:00 du matin.
@@ -69,6 +71,10 @@ public class AlerteHebdomadaireService {
     public List<AlerteHebdomadaire> executerBatchHebdomadaire(LocalDate dateEvaluation) {
         List<Medecin> medecins = medecinRepository.findAllWithImportedDossiers();
         List<AlerteHebdomadaire> alertesCreees = new ArrayList<>();
+        // Paliers de rupture (table Contrôle) chargés une seule fois pour tout le batch
+        PaliersControle paliersRupture = controleService != null
+                ? controleService.paliers(TypeControle.RUPTURE)
+                : PaliersControle.defauts(TypeControle.RUPTURE);
 
         for (Medecin m : medecins) {
             String statut = m.getStatut() != null ? m.getStatut().toUpperCase() : "INACTIF";
@@ -99,10 +105,10 @@ public class AlerteHebdomadaireService {
             long joursSilence = ChronoUnit.DAYS.between(dateDerniere, dateEvaluation);
             if (joursSilence < 0) joursSilence = 0;
 
-            // Référentiel: <1,5 aucune rupture; 1,5-<2 à surveiller; >=2 critique.
+            // Paliers RUPTURE de la table Contrôle (défaut : <150 % aucune ; 150-200 % surveillance ; >=200 % critique).
             double ratio = intervalleMoyen > 0 ? joursSilence / intervalleMoyen : 0.0;
 
-            SilenceAlertPolicy.NiveauRupture niveauRupture = SilenceAlertPolicy.niveauRupture(ratio);
+            SilenceAlertPolicy.NiveauRupture niveauRupture = SilenceAlertPolicy.niveauRupture(ratio, paliersRupture);
             if (niveauRupture != SilenceAlertPolicy.NiveauRupture.AUCUNE) {
                 TypeAlerte type = TypeAlerte.RUPTURE_RYTHME;
                 if (niveauRupture == SilenceAlertPolicy.NiveauRupture.CRITIQUE) {
@@ -118,7 +124,7 @@ public class AlerteHebdomadaireService {
 
                 if (!SilenceAlertPolicy.alerteStrategiqueEligible(
                     statut, segment, m.getNoteInput(), fiabiliteSuffisante, impactSuffisant,
-                    ratio, Boolean.TRUE.equals(m.getIsProfilIrregulier()))) {
+                    niveauRupture, Boolean.TRUE.equals(m.getIsProfilIrregulier()))) {
                     continue;
                 }
 

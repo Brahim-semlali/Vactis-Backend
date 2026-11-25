@@ -1,5 +1,7 @@
 package com.vactis.service;
 
+import com.vactis.model.Controle.TypeControle;
+
 import java.util.List;
 
 public final class ActionHorizonPolicy {
@@ -17,6 +19,22 @@ public final class ActionHorizonPolicy {
             case "ELEVEE", "ÉLEVÉE" -> 15;
             default -> 30;
         };
+    }
+
+    /** Délai selon la table Contrôle DELAI_ACTION ; repli sur les délais par défaut si non configuré. */
+    public static int recommanderHorizon(
+            String niveauIntensite,
+            boolean silenceCritiqueStrategique,
+            PaliersControle delais
+    ) {
+        String etat = silenceCritiqueStrategique ? "SILENCE_STRATEGIQUE"
+                : niveauIntensite == null ? "NORMALE" : niveauIntensite;
+        Integer jours = PaliersControle.ou(delais, TypeControle.DELAI_ACTION).valeurPour(etat);
+        if (jours == null && !silenceCritiqueStrategique) {
+            // Niveau inconnu : même traitement que le délai standard
+            jours = PaliersControle.ou(delais, TypeControle.DELAI_ACTION).valeurPour("NORMALE");
+        }
+        return jours != null && jours > 0 ? jours : recommanderHorizon(niveauIntensite, silenceCritiqueStrategique);
     }
 
     public static double percentile(List<Double> scores, double quantile) {

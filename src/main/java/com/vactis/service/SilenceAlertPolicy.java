@@ -1,5 +1,7 @@
 package com.vactis.service;
 
+import com.vactis.model.Controle.TypeControle;
+
 import java.util.Set;
 
 public final class SilenceAlertPolicy {
@@ -21,6 +23,16 @@ public final class SilenceAlertPolicy {
         return NiveauRupture.AUCUNE;
     }
 
+    /** Niveau de rupture selon les paliers RUPTURE de la table Contrôle (ratio exprimé en %). */
+    public static NiveauRupture niveauRupture(double ratio, PaliersControle paliers) {
+        String etat = PaliersControle.ou(paliers, TypeControle.RUPTURE).etatPour(ratio * 100.0);
+        try {
+            return etat == null ? niveauRupture(ratio) : NiveauRupture.valueOf(etat);
+        } catch (IllegalArgumentException e) {
+            return niveauRupture(ratio);
+        }
+    }
+
     public static double scoreUrgence(double ratio, double scoreRisque, double scoreValeur) {
         double scoreSilence = Math.min(100.0, Math.max(0.0, (ratio - 1.0) * 100.0));
         return Math.round(Math.min(100.0, 0.40 * scoreSilence + 0.30 * scoreRisque + 0.30 * scoreValeur) * 10.0) / 10.0;
@@ -35,6 +47,19 @@ public final class SilenceAlertPolicy {
             double ratioSilence,
             boolean profilIrregulier
     ) {
+        return alerteStrategiqueEligible(statut, segment, notePotentiel, fiabilitePartielleOuFiable,
+                impactMoyenOuFort, niveauRupture(ratioSilence), profilIrregulier);
+    }
+
+    public static boolean alerteStrategiqueEligible(
+            String statut,
+            String segment,
+            Double notePotentiel,
+            boolean fiabilitePartielleOuFiable,
+            boolean impactMoyenOuFort,
+            NiveauRupture niveauRupture,
+            boolean profilIrregulier
+    ) {
         String statutNormalise = statut == null ? "" : statut.trim().toUpperCase();
         String segmentNormalise = segment == null ? "" : segment.trim().toUpperCase();
         boolean strategique = "A".equals(segmentNormalise) || "B".equals(segmentNormalise);
@@ -44,6 +69,6 @@ public final class SilenceAlertPolicy {
                 && notePotentiel != null && notePotentiel >= 4.0
                 && fiabilitePartielleOuFiable
                 && impactMoyenOuFort
-                && niveauRupture(ratioSilence) == NiveauRupture.CRITIQUE;
+                && niveauRupture == NiveauRupture.CRITIQUE;
     }
 }

@@ -1,5 +1,8 @@
 package com.vactis.service;
 
+import com.vactis.model.Controle.Controle;
+import com.vactis.model.Controle.TypeControle;
+
 import com.vactis.model.action.Action;
 import com.vactis.model.alerte.AlerteHebdomadaire;
 import com.vactis.model.alerte.StatutAlerte;
@@ -44,6 +47,9 @@ class AlerteHebdomadaireServiceTest {
     @Mock
     private RetourTerrainRepository retourTerrainRepository;
 
+    @Mock
+    private ControleService controleService;
+
     @InjectMocks
     private AlerteHebdomadaireService alerteHebdomadaireService;
 
@@ -62,6 +68,60 @@ class AlerteHebdomadaireServiceTest {
         medecin.setFiabilite("PARTIEL");
         medecin.setScoreRisque(40.0);
         medecin.setScoreValeur(75.0);
+    }
+
+    /** Silence de 30 jours pour un rythme habituel d'environ 6,7 jours : ratio ≈ 450 %. */
+    private void preparerSilenceDeTrenteJours() {
+        when(medecinRepository.findAllWithImportedDossiers()).thenReturn(List.of(medecin));
+        when(retourTerrainRepository.findByMedecinOrderByDateVisiteDescCreatedAtDesc(medecin)).thenReturn(List.of());
+        LocalDate aujourdHui = LocalDate.now();
+        when(extractionDonneesRepository.findDatesReceptionByMedecinId(10L)).thenReturn(List.of(
+                aujourdHui.minusDays(30), aujourdHui.minusDays(35), aujourdHui.minusDays(40), aujourdHui.minusDays(50)));
+        when(extractionDonneesRepository.countCasByMedecinId(10L)).thenReturn(12L);
+    }
+
+    private static Controle palierRupture(String etat, long min, long max) {
+        Controle c = new Controle();
+        c.setType(TypeControle.RUPTURE);
+        c.setEtat(etat);
+        c.setMinCA(min);
+        c.setMaxCA(max);
+        c.setActif(true);
+        return c;
+    }
+
+    @Test
+    @DisplayName("Contrôle Rupture : un seuil critique relevé au-delà du ratio observé supprime l'alerte")
+    void reglesRuptureDeLaTableControleSontAppliquees() {
+        preparerSilenceDeTrenteJours();
+        when(controleService.paliers(TypeControle.RUPTURE)).thenReturn(PaliersControle.de(TypeControle.RUPTURE, List.of(
+                palierRupture("AUCUNE", 0, 300),
+                palierRupture("SURVEILLANCE", 300, 600),
+                palierRupture("CRITIQUE", 600, PaliersControle.PLAFOND))));
+
+        List<AlerteHebdomadaire> result = alerteHebdomadaireService.executerBatchHebdomadaire();
+
+        // Ratio ≈ 450 % : SURVEILLANCE seulement, or l'alerte stratégique exige CRITIQUE
+        assertTrue(result.isEmpty());
+        verify(alerteHebdomadaireRepository, never()).save(any(AlerteHebdomadaire.class));
+    }
+
+    @Test
+    @DisplayName("Contrôle Rupture : un seuil critique abaissé déclenche l'alerte")
+    void seuilCritiqueAbaisseDeclencheLAlerte() {
+        preparerSilenceDeTrenteJours();
+        when(controleService.paliers(TypeControle.RUPTURE)).thenReturn(PaliersControle.de(TypeControle.RUPTURE, List.of(
+                palierRupture("AUCUNE", 0, 120),
+                palierRupture("CRITIQUE", 120, PaliersControle.PLAFOND))));
+        when(alerteHebdomadaireRepository.findRecentActiveAlerte(eq(medecin), any(LocalDate.class), eq(StatutAlerte.A_TRAITER)))
+                .thenReturn(Optional.empty());
+        when(alerteHebdomadaireRepository.save(any(AlerteHebdomadaire.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<AlerteHebdomadaire> result = alerteHebdomadaireService.executerBatchHebdomadaire();
+
+        assertEquals(1, result.size());
+        assertEquals(com.vactis.model.alerte.TypeAlerte.CHURN_IMMINENT, result.get(0).getTypeAlerte());
+        verify(controleService).paliers(TypeControle.RUPTURE);
     }
 
     @Test

@@ -156,7 +156,9 @@ public class ExcelImportService {
                     .mapToInt(r -> r.prixPay)
                     .sum();
 
-            String statutResult = controleService.determinerEtat(TypeControle.STATUT, (long) caMoisActuel);
+            // Les règles STATUT sont exprimées en variation % du CA (M vs M-1), pas en montant.
+            String statutResult = controleService.determinerEtat(TypeControle.STATUT,
+                    variationCaPourcent(caMoisActuel, caBaselineRef));
             medecin.setStatut(statutResult != null ? statutResult : "NOUVEAU");
             medecin.setStatutPilotage(determineStatutPilotage(statutResult, caMoisActuel));
             medecin.setRisqueUrgence(caMoisActuel > 50000 ? RisqueUrgence.FAIBLE : (caMoisActuel > 15000 ? RisqueUrgence.MOYEN : RisqueUrgence.ELEVE));
@@ -390,4 +392,13 @@ public class ExcelImportService {
 
     private record RawRowData(int rowIdx, LocalDate dateRec, String docName, String specialite,
                               String organisme, String lieu, int prixTot, int prixPay, boolean urgent) {}
+
+    /**
+     * Variation du CA du mois par rapport au mois précédent, en % arrondi (base des règles STATUT).
+     * Null si le mois précédent n'a pas de CA : la variation n'est pas calculable (médecin NOUVEAU).
+     */
+    static Long variationCaPourcent(long caMois, long caMoisPrecedent) {
+        if (caMoisPrecedent <= 0) return null;
+        return Math.round((caMois - caMoisPrecedent) * 100.0 / caMoisPrecedent);
+    }
 }

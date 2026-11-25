@@ -19,6 +19,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import com.vactis.model.system.SystemSettings;
 import com.vactis.repository.system.SystemSettingsRepository;
+import com.vactis.service.ControleService;
 
 import java.util.List;
 
@@ -35,6 +36,7 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final SystemSettingsRepository systemSettingsRepository;
     private final MenuPrincipalRepository menuPrincipalRepository;
+    private final ControleService controleService;
 
     @Value("${VACTIS_ADMIN_PASSWORD:}")
     private String adminPassword;
@@ -43,6 +45,7 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
     public void run(String... args) {
         initAuthSettings();
         initSystemSettings();
+        initControleRules();
         initMenuItems();
         initRoles();
         initAdminUser();
@@ -50,6 +53,14 @@ public class DefaultSystemDataSeeder implements CommandLineRunner {
 
     private void initSystemSettings() {
         systemSettingsRepository.findFirstOrCreateDefault();
+    }
+
+    // Rupture, Urgence, Fiabilité, Délai d'action : initialisés avec les règles VACTIS actuelles si vides
+    private void initControleRules() {
+        int crees = controleService.initialiserReglesParDefaut();
+        if (crees > 0) {
+            log.info("{} règles de contrôle par défaut initialisées (Rupture, Urgence, Fiabilité, Délai d'action)", crees);
+        }
     }
 
     private void initAuthSettings() {

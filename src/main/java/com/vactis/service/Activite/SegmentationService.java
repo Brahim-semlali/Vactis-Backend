@@ -9,6 +9,7 @@ import com.vactis.repository.ExtractionDonneesRepository;
 import com.vactis.repository.MedecinRepository;
 import com.vactis.repository.RetourTerrainRepository;
 import com.vactis.service.ControleService;
+import com.vactis.service.PaliersControle;
 import com.vactis.service.RetourTerrainService;
 import com.vactis.service.ActionHorizonPolicy;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +60,9 @@ public class SegmentationService {
         if (medecins.isEmpty()) return;
 
         int totalMedecins = medecins.size();
+        // Paliers dynamiques (table Contrôle), chargés une seule fois pour tout le portefeuille
+        PaliersControle paliersFiabilite = PaliersControle.ou(controleService.paliers(TypeControle.FIABILITE), TypeControle.FIABILITE);
+        PaliersControle paliersUrgence = PaliersControle.ou(controleService.paliers(TypeControle.URGENCE), TypeControle.URGENCE);
 
         YearMonth moisCourant = YearMonth.from(dateReference);
         List<LocalDate> allDatesDescending = extractionDonneesRepository.findAllDatesDescending();
@@ -219,9 +223,7 @@ public class SegmentationService {
             moisActifsParMedecin.put(m.getId(), moisActifs);
             boolean ancienneteSuffisante = m.getDatePremiereCollaboration() != null
                 && !m.getDatePremiereCollaboration().plusMonths(6).isAfter(dateReference);
-            m.setFiabilite(moisActifs >= 3 && ancienneteSuffisante
-                ? "FIABLE"
-                : moisActifs >= 2 ? "PARTIEL" : "NON_FIABLE");
+            m.setFiabilite(fiabilite(paliersFiabilite, moisActifs, ancienneteSuffisante));
 
             LocalDate derniereActivite = datesMedecin.isEmpty() ? null : datesMedecin.get(0);
             Optional<RetourTerrain> conge = retourTerrainService.getHistorique(m).stream()
@@ -317,15 +319,7 @@ public class SegmentationService {
             m.setScoreUrgence(urgenceFinale);
 
             double scoreSilence = m.getScoreSilence() != null ? m.getScoreSilence() : 0.0;
-            if (scoreSilence >= 100.0 || urgenceFinale >= 75.0) {
-                m.setRisqueUrgence(RisqueUrgence.URGENT);
-            } else if (scoreSilence > 70.0 || scoreRisque >= 50.0 || urgenceFinale >= 50.0) {
-                m.setRisqueUrgence(RisqueUrgence.ELEVE);
-            } else if (scoreRisque >= 25.0 || urgenceFinale >= 25.0) {
-                m.setRisqueUrgence(RisqueUrgence.MOYEN);
-            } else {
-                m.setRisqueUrgence(RisqueUrgence.FAIBLE);
-            }
+            m.setRisqueUrgence(niveauUrgence(paliersUrgence, urgenceFinale, scoreRisque, scoreSilence));
         }
 
             List<Medecin> medecinsAvecActionClassement = medecins.stream()
@@ -351,6 +345,45 @@ public class SegmentationService {
         return Comparator.comparingDouble((Medecin medecin) ->
                         caMoyenParMedecin.getOrDefault(medecin.getId(), 0.0))
                 .thenComparing(Medecin::getId);
+    }
+
+    /**
+     * Fiabilité selon les paliers FIABILITE (mois actifs). FIABLE exige en plus 6 mois
+     * d'ancienneté de collaboration ; sinon le médecin est rétrogradé en PARTIEL.
+     */
+    static String fiabilite(PaliersControle paliers, long moisActifs, boolean ancienneteSuffisante) {
+        String etat = paliers.etatPour(moisActifs);
+        if ("FIABLE".equals(etat) && !ancienneteSuffisante) return "PARTIEL";
+        return etat != null ? etat : "NON_FIABLE";
+    }
+
+    /**
+     * Niveau d'urgence : paliers URGENCE appliqués au score d'urgence finale, et au score
+     * de risque plafonné à ELEVE. Le silence garde ses escalades fixes (>70 ELEVE, >=100 URGENT).
+     */
+    static RisqueUrgence niveauUrgence(PaliersControle paliers, double urgenceFinale, double scoreRisque, double scoreSilence) {
+        RisqueUrgence niveau = versRisque(paliers.etatPour(urgenceFinale));
+        niveau = plusHaut(niveau, plusBas(versRisque(paliers.etatPour(scoreRisque)), RisqueUrgence.ELEVE));
+        if (scoreSilence >= 100.0) niveau = plusHaut(niveau, RisqueUrgence.URGENT);
+        else if (scoreSilence > 70.0) niveau = plusHaut(niveau, RisqueUrgence.ELEVE);
+        return niveau;
+    }
+
+    private static RisqueUrgence versRisque(String etat) {
+        if (etat == null) return RisqueUrgence.FAIBLE;
+        try {
+            return RisqueUrgence.valueOf(etat);
+        } catch (IllegalArgumentException e) {
+            return RisqueUrgence.FAIBLE;
+        }
+    }
+
+    private static RisqueUrgence plusHaut(RisqueUrgence a, RisqueUrgence b) {
+        return a.ordinal() >= b.ordinal() ? a : b;
+    }
+
+    private static RisqueUrgence plusBas(RisqueUrgence a, RisqueUrgence b) {
+        return a.ordinal() <= b.ordinal() ? a : b;
     }
 
     private double phaseUrgence(String statut) {
